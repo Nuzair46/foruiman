@@ -2,13 +2,21 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   test:
+    name: Ruby ${{ matrix.ruby }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -16,12 +24,37 @@ jobs:
       matrix:
         ruby: ['3.2', '3.3', '3.4', '4.0']
     steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - run: bundle exec rspec
-      - run: bundle exec rubocop
-      - run: gem build foruiman.gemspec
-      - run: bundle exec ruby script/smoke_gem.rb
+
+      - name: Run tests
+        run: bundle exec rspec
+
+  quality:
+    name: Quality and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby 4.0
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+
+      - name: Run RuboCop
+        run: bundle exec rubocop --format github
+
+      - name: Build gem
+        run: gem build foruiman.gemspec
+
+      - name: Smoke-test packaged gem
+        run: bundle exec ruby script/smoke_gem.rb

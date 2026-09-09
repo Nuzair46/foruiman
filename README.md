@@ -1,24 +1,30 @@
 # Foruiman
 
+[![CI](https://github.com/Nuzair46/foruiman/actions/workflows/ci.yml/badge.svg)](https://github.com/Nuzair46/foruiman/actions/workflows/ci.yml)
+
 A Procfile runner with process tabs, bounded logs, scrolling, and isolated restarts.
-Foruiman 0.1.2 is derived from [David Dollar's Foreman](https://github.com/ddollar/foreman),
-at commit [`f65ddba83932bd4670e014389d6e27ea1e20b469`](https://github.com/ddollar/foreman/commit/f65ddba83932bd4670e014389d6e27ea1e20b469).
+Foruiman is a fork of [David Dollar's Foreman](https://github.com/ddollar/foreman).
 The MIT license and attribution are preserved. See [provenance](docs/UPSTREAM.md)
 and [intentional compatibility differences](docs/COMPATIBILITY.md).
 
 Requires Ruby 3.2+ and a POSIX system with `/bin/sh` and process groups. Linux is
 covered by CI on Ruby 3.2, 3.3, 3.4, and 4.0. Native Windows is unsupported; use WSL.
 
-## Install from this checkout
+## Install
+
+```sh
+gem install foruiman
+```
+
+To install from a checkout:
 
 ```sh
 bundle install
 gem build foruiman.gemspec
-gem install --local ./foruiman-0.1.2.gem
+gem install --local ./foruiman-*.gem
 ```
 
-Or run directly with `bundle exec ruby bin/foruiman`. This checkout does not publish
-a gem or create a hosted fork.
+Or run directly with `bundle exec ruby bin/foruiman`.
 
 ## Run
 
@@ -203,3 +209,27 @@ bundle exec ruby script/smoke_gem.rb
 The suite includes adapted upstream parser and environment cases, Ruby subprocess
 fixtures, bounded-output tests, fake-terminal tests, and real PTYs. Process tests
 clean up their fixtures even when assertions fail. Nothing here requires Rails.
+
+## Release
+
+Releases use RubyGems trusted publishing, so the repository does not store a
+long-lived RubyGems API key. Configure the `foruiman` gem (or a pending trusted
+publisher before its first release) with these values on RubyGems.org:
+
+| Setting | Value |
+| --- | --- |
+| Repository owner | `Nuzair46` |
+| Repository name | `foruiman` |
+| Workflow filename | `release.yml` |
+| Environment | `release` |
+
+Set the version in `lib/foruiman/version.rb`, commit it, and push a matching tag:
+
+```sh
+VERSION=$(ruby -Ilib -rforuiman/version -e 'print Foruiman::VERSION')
+git tag "v$VERSION"
+git push origin "v$VERSION"
+```
+
+GitHub Actions runs the complete Ruby 3.2–4.0 test matrix, lint and package checks,
+then publishes the gem to RubyGems.org using a short-lived OpenID Connect token.
