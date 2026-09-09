@@ -1,18 +1,8 @@
-source "http://rubygems.org"
+# frozen_string_literal: true
 
+source "https://rubygems.org"
 gemspec
 
-group :test do
-  gem 'rake'
-  gem 'fakefs'
-  gem 'rspec',  '~> 3.5'
-  gem "simplecov", :require => false
-  gem 'timecop'
-end
-
-group :development do
-  gem 'aws-s3'
-  gem 'ronn-ng'
-  gem 'yard', '~> 0.9.11'
-  gem 'automatiek'
-end
+gem "rake", "~> 13.0"
+gem "rspec", "~> 3.13"
+gem "rubocop", "~> 1.80"
