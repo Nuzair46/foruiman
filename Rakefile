@@ -1,8 +1,6 @@
-$:.unshift File.expand_path("../lib", __FILE__)
-require "foreman"
+# frozen_string_literal: true
 
-require "bundler/setup"
+require "rspec/core/rake_task"
 
-Dir[File.expand_path("../tasks/*.rake", __FILE__)].each do |task|
-  load task
-end
+RSpec::Core::RakeTask.new(:spec)
+task default: :spec

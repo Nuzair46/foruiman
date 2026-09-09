@@ -1,0 +1,18 @@
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - vendor/**/*
+
+Style/Documentation:
+  Enabled: false
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/ClassAndModuleChildren:
+  Enabled: false
+Metrics:
+  Enabled: false
+Layout/LineLength:
+  Max: 120
+Gemspec/RequireMFA:
+  Enabled: true

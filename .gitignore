@@ -1,8 +1,7 @@
-/.bundle
-/.env
-/coverage
-/man/*.html
-/man/*.markdown
+/.bundle/
+/vendor/
 /pkg/
-/vendor
-Gemfile.lock
+/*.gem
+/coverage/
+/.rspec_status
+/.env
