@@ -296,9 +296,9 @@ module Foruiman::TUI
 
     def frame(lines, rows)
       rendered = Array.new(rows) do |index|
-        # Paint before erasing so the unused last cell and resized rows keep the
-        # same background. Reserve that last cell to avoid terminal autowrap.
-        "#{@theme.base}\e[2K#{self.class.truncate(lines[index].to_s, @width)}"
+        # Erase before drawing, then restore the theme defaults. Reserve the last
+        # cell to avoid terminal autowrap.
+        "\e[2K#{@theme.base}#{self.class.truncate(lines[index].to_s, @width)}"
       end.join("\r\n")
       "\e[H#{rendered}"
     end

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Test Ruby 3.2, 3.3, 3.4, and 4.0 in a reusable CI workflow and keep the
+  development dependency set compatible with Ruby 3.2.
+- Add a tag-driven RubyGems trusted-publishing workflow gated by the full CI suite.
+- Make renderer row-width checks independent of the runner's terminal settings.
+
 ## 0.1.2
 
 - Fix lowercase `r` on the `all` tab to restart every process; keep `R` available
