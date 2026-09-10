@@ -17,6 +17,8 @@ module Foruiman::TUI
       [nil, "Space", "Pause / resume following", nil],
       ["⚙ PROCESSES", "r / R", "Restart selected / all", "r on all restarts all"],
       [nil, "s / S", "Stop selected / all", nil],
+      [nil, "d", "Disable / enable selected", "disabled entries stay off on restart all"],
+      ["⌨ INPUT", "i", "Send keys to selected process", "Ctrl-] returns to Foruiman"],
       ["◇ SESSION", "? / Escape", "Close help", nil],
       [nil, "q / Ctrl-C", "Stop processes and quit", nil]
     ].freeze
@@ -157,7 +159,9 @@ module Foruiman::TUI
                else
                  engine.state(state.name).status == :running
                end
-      mode = if !state.viewport.following
+      mode = if state.input?
+               @theme.paint(" ▶ INPUT ", :cyan)
+             elsif !state.viewport.following
                @theme.paint(" Ⅱ PAUSED ", :amber)
              elsif active
                @theme.paint(" ● LIVE ", :green)
@@ -244,6 +248,12 @@ module Foruiman::TUI
     end
 
     def controls(state, engine)
+      if state.input?
+        left = @theme.paint(" ▶ Input to #{state.input_target}", :cyan, bold: true)
+        right = @theme.paint(" Ctrl-] return ", :amber, bold: true)
+        return distribute(left, right, @width)
+      end
+
       quit = @theme.paint(" q ", :accent, bold: true) + @theme.paint(" × quit ", :muted)
       left = if engine.shutting_down?
                @theme.paint(" ◌ Stopping process groups · TERM → KILL after 5s", :amber)
@@ -259,8 +269,9 @@ module Foruiman::TUI
 
     def shortcuts(state)
       restart = ["r", state.name == "all" ? "↻ restart all" : "↻ restart"]
-      pairs = [%w[Tab switch], ["↑↓", "scroll"], %w[f follow], restart, ["?", "help"]]
-      pairs = [restart, ["?", "help"]] if @width < 65
+      pairs = [%w[Tab switch], ["↑↓", "scroll"], %w[f follow], restart,
+               %w[d enable/disable], %w[i input], ["?", "help"]]
+      pairs = [restart, %w[d toggle], %w[i input], ["?", "help"]] if @width < 85
       pairs.map do |key, label|
         @theme.paint(" #{key} ", :accent, bold: true) + @theme.paint(" #{label}  ", :muted)
       end.join

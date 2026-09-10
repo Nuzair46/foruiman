@@ -95,6 +95,39 @@ RSpec.describe "PTY and signal integration" do
     expect(status).to be_success
   end
 
+  it "keeps watcher stdin open and forwards interactive debugger input" do
+    write_file("Procfile", "watch: #{fixture('watch')}\nweb: #{fixture('input')}\n")
+    status = with_terminal(*command) do |master, _slave, _pid, output|
+      read_until(master, output, "watching")
+      expect(output).not_to include("stdin closed")
+      master.write("2i")
+      read_until(master, output, "Input to web")
+      master.write("continue\n")
+      read_until(master, output, 'received "continue"')
+      master.write("\x1d")
+      read_until(master, output, "Returned from web")
+      master.write("q")
+    end
+    expect(status).to be_success
+  end
+
+  it "disables and re-enables a process from the TUI" do
+    pidfile = File.join(@directory, "toggle.pids")
+    write_file("Procfile", "web: #{fixture('ticker', pidfile)}\n")
+    status = with_terminal(*command) do |master, _slave, _pid, output|
+      read_until(master, output, "ready")
+      first_pid = File.read(pidfile).to_i
+      master.write("1d")
+      read_until(master, output, "disabled")
+      eventually { !alive?(first_pid) }
+      master.write("d")
+      read_until(master, output, "Enabling web")
+      eventually { File.read(pidfile).to_i != first_pid && alive?(File.read(pidfile).to_i) }
+      master.write("q")
+    end
+    expect(status).to be_success
+  end
+
   { "r on all" => "r", "R on all" => "R", "R on a process tab" => "1R" }.each do |label, keys|
     it "restarts every process with #{label} and cleans both generations" do
       pidfiles = %w[web worker].map { |name| File.join(@directory, "#{name}.pids") }
@@ -107,7 +140,7 @@ RSpec.describe "PTY and signal integration" do
         old_pids = pidfiles.map { |file| File.read(file).to_i }
         write_file("history.pids", old_pids.join("\n"))
         master.write(keys)
-        read_until(master, output, "Restarting all processes")
+        read_until(master, output, "Restarting all enabled processes")
         eventually do
           bytes = master.read_nonblock(65_536, exception: false)
           output << bytes if bytes.is_a?(String)

@@ -12,7 +12,7 @@ class Foruiman::Process
 
   def run(options = {})
     ::Process.spawn(env.merge(options.fetch(:env, {})), "/bin/sh", "-c", command,
-                    chdir: cwd, in: File::NULL, out: options.fetch(:output, $stdout),
+                    chdir: cwd, in: options.fetch(:input, $stdin), out: options.fetch(:output, $stdout),
                     err: options.fetch(:error, $stderr), pgroup: true, unsetenv_others: true,
                     close_others: true)
   end

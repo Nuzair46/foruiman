@@ -5,7 +5,7 @@ require_relative "viewport"
 module Foruiman::TUI
   class State
     attr_reader :tabs, :selected, :viewports
-    attr_accessor :help, :feedback
+    attr_accessor :help, :feedback, :input_target
 
     def initialize(names)
       @tabs = [*names, "all"].freeze
@@ -13,6 +13,7 @@ module Foruiman::TUI
       @viewports = tabs.to_h { |name| [name, Viewport.new] }
       @help = false
       @feedback = nil
+      @input_target = nil
     end
 
     def name
@@ -21,6 +22,10 @@ module Foruiman::TUI
 
     def viewport
       viewports.fetch(name)
+    end
+
+    def input?
+      !input_target.nil?
     end
 
     def select(index)

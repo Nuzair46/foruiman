@@ -46,6 +46,11 @@ The TUI opens when stdin and stdout are terminals. Otherwise, Foruiman streams
 plain logs and exits when the processes finish. Processes run independently, and
 restarting one process does not interrupt the others.
 
+Each TUI process gets its own open terminal input, so asset builders using their
+default `--watch` mode stay alive. Select a process and press `i` to type into a
+debugger such as Pry or IRB; press Ctrl-] to return to Foruiman. Press `d` to
+disable or re-enable the selected process for the rest of the session.
+
 ## Options
 
 | Option | Default | Purpose |
@@ -69,9 +74,11 @@ restarting one process does not interrupt the others.
 | Home / `g` | Jump to oldest retained log |
 | End / `G` / `f` | Follow new output |
 | Space | Pause or resume following |
+| `i` / Ctrl-] | Send input to the selected process / return to Foruiman |
 | `r` | Restart the selected process, or all from `all` |
 | `R` | Restart all processes |
 | `s` / `S` | Stop selected / stop all |
+| `d` | Disable or re-enable the selected process |
 | `?` / Escape | Toggle help / close help |
 | `q` / Ctrl-C | Stop processes and quit |
 
