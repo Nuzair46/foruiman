@@ -58,6 +58,11 @@ caller retains the real terminal; `write_input(name, bytes)` forwards input,
 the pseudo-terminals sized with the UI. The TUI uses this mode so watch commands
 do not see EOF and only the selected process receives interactive input.
 
+The TUI edits commands locally in a bounded `InputLine`, with independent history
+for each process, then sends a complete line on Enter. Ctrl-X leaves input mode.
+`OutputLine` interprets carriage returns, backspaces, horizontal cursor moves and
+line erasure before recording child output; screen controls remain suppressed.
+
 `LogStore` uses per-process `Ring` instances and an aggregate `Ring`, each with O(1)
 append, eviction, record replacement, and identity lookup. Immutable `Data` records
 are shared. A partial record has one sequence identity; completing it replaces

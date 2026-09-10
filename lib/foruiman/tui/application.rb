@@ -30,12 +30,8 @@ module Foruiman::TUI
           detach_unavailable_input
           input = @terminal.read
           @engine.shutdown if input.nil?
-          height = [Renderer.log_height(rows: rows, columns: columns), 1].max
-          if input.is_a?(String) && state.input?
-            forward_input(input)
-          else
-            @keyboard.feed(input.is_a?(String) ? input : "").each { |key| handle(key, height) }
-          end
+          height = [Renderer.log_height(rows: rows, columns: columns, input: state.input?), 1].max
+          read_keys(input.is_a?(String) ? input : "", height)
           state.feedback = nil if monotonic >= @feedback_until
           next if monotonic < @next_frame_at && @was_shutting_down == @engine.shutting_down?
 
@@ -84,6 +80,17 @@ module Foruiman::TUI
 
     private
 
+    def read_keys(bytes, height)
+      @keyboard.feed("").each { |key| handle(key, height) } unless state.input?
+      bytes.bytes.each_with_index do |byte, index|
+        if state.input?
+          forward_input(bytes.byteslice(index..))
+          break
+        end
+        @keyboard.feed(byte.chr).each { |key| handle(key, height) }
+      end
+    end
+
     def begin_input
       if state.name == "all"
         feedback("Select a process before entering input mode")
@@ -99,22 +106,20 @@ module Foruiman::TUI
 
     def forward_input(bytes)
       name = state.input_target
-      child_bytes, separator, = bytes.partition("\x1d")
-      write_child_input(name, child_bytes)
-      return if separator.empty?
-
-      state.input_target = nil
-      feedback("Returned from #{name}")
+      state.input_line.feed(bytes).each do |event|
+        case event
+        when :detach
+          state.input_target = nil
+          feedback("Returned from #{name}")
+        when :interrupt then @engine.interrupt_process(name)
+        when :eof then send_input(name, "\x04")
+        when Array then send_input(name, "#{event.last}\n")
+        end
+      end
     end
 
-    def write_child_input(name, bytes)
-      parts = bytes.split("\x03", -1)
-      available = parts.each_with_index.all? do |part, index|
-        written = part.empty? || @engine.write_input(name, part)
-        @engine.interrupt_process(name) if written && index < parts.size - 1
-        written
-      end
-      return if available
+    def send_input(name, bytes)
+      return if @engine.write_input(name, bytes)
 
       state.input_target = nil
       feedback("Input unavailable for #{name}")
@@ -131,7 +136,7 @@ module Foruiman::TUI
 
     def toggle_process
       if state.name == "all"
-        feedback("Select a process first; S stops all processes")
+        control_all(:stop)
         return
       end
 

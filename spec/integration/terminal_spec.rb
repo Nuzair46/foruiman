@@ -102,9 +102,11 @@ RSpec.describe "PTY and signal integration" do
       expect(output).not_to include("stdin closed")
       master.write("2i")
       read_until(master, output, "Input to web")
-      master.write("continue\n")
+      master.write("continux")
+      read_until(master, output, "continux")
+      master.write("\x7fe\n")
       read_until(master, output, 'received "continue"')
-      master.write("\x1d")
+      master.write("\x18")
       read_until(master, output, "Returned from web")
       master.write("q")
     end
@@ -150,6 +152,26 @@ RSpec.describe "PTY and signal integration" do
           end
         end
         expect(old_pids.select { |pid| alive?(pid) }).to be_empty
+        master.write("q")
+      end
+      expect(status).to be_success
+    end
+  end
+
+  { "s on all" => "s", "S on all" => "S", "S on a process tab" => "1S" }.each do |label, keys|
+    it "stops every process with #{label} and keeps the interface open" do
+      pidfiles = %w[web worker].map { |name| File.join(@directory, "#{name}.pids") }
+      write_file("Procfile", pidfiles.map do |file|
+        "#{File.basename(file, '.pids')}: exec #{fixture('ticker', file)}\n"
+      end.join)
+      status = with_terminal(*command) do |master, _slave, pid, output|
+        read_until(master, output, "ready")
+        eventually { pidfiles.all? { |file| File.exist?(file) && File.read(file).to_i.positive? } }
+        members = pidfiles.map { |file| File.read(file).to_i }
+        master.write(keys)
+        read_until(master, output, "Stopping all processes")
+        eventually { members.none? { |member| alive?(member) } }
+        expect(alive?(pid)).to be(true)
         master.write("q")
       end
       expect(status).to be_success

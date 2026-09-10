@@ -38,6 +38,18 @@ RSpec.describe Foruiman::TUI::Viewport do
 end
 
 RSpec.describe Foruiman::TUI::State do
+  it "keeps command history separate for each process" do
+    state = described_class.new(%w[web worker])
+    state.input_target = "web"
+    state.input_line.feed("Settings.value\n")
+    state.input_target = "worker"
+    state.input_line.feed("\e[A")
+    expect(state.input_line.text).to eq("")
+    state.input_target = "web"
+    state.input_line.feed("\e[A")
+    expect(state.input_line.text).to eq("Settings.value")
+  end
+
   it "preserves ordered tabs and independent follow/scroll state" do
     state = described_class.new(%w[web worker])
     expect(state.tabs).to eq(%w[web worker all])
@@ -74,6 +86,24 @@ RSpec.describe Foruiman::TUI::Keyboard do
 end
 
 RSpec.describe Foruiman::TUI::Renderer do
+  it "keeps the command cursor visible across narrow layouts and resizing" do
+    engine = build_engine({ "web" => fixture("ticker") })
+    engine.start_all
+    state = Foruiman::TUI::State.new(["web"])
+    state.select(0)
+    state.input_target = "web"
+    state.input_line.feed("#{'界' * 80}tail")
+    renderer = described_class.new
+    [[24, 100], [8, 38], [6, 26]].each do |rows, columns|
+      frame = renderer.render(state, engine, rows: rows, columns: columns)
+      expect(frame).to include("Ctrl-X")
+      expect(frame).to include("tail") if rows >= 8
+      lines = frame.delete_prefix("\e[H").split("\r\n")
+      expect(lines.size).to eq(rows)
+      expect(lines.map { |line| described_class.width(line.delete_prefix("\e[2K")) }.max).to be < columns
+    end
+  end
+
   it "measures Unicode graphemes, wide characters, combining marks, and styles" do
     expect(described_class.width("\e[31m界é👩‍💻\e[0m")).to eq(5)
     text = described_class.truncate("\e[31m界é👩‍💻 tail", 3)

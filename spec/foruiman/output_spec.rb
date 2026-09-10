@@ -33,6 +33,40 @@ RSpec.describe Foruiman::Output do
     expect(logs.all[0].text).to eq("a�b�")
   end
 
+  it "overwrites Readline redraws and backspaces in the same partial record" do
+    output.feed("[1] pry(main)> S")
+    sequence = logs.all[0].sequence
+    output.feed("\e[0G[1] pry(main)> Se\r[1] pry(main)> Settix\b \bngs\e[K")
+    expect(logs.all[0].sequence).to eq(sequence)
+    expect(logs.all[0].text).to eq("[1] pry(main)> Settings")
+    output.feed("\n", eof: true)
+    expect(logs.all.size).to eq(1)
+    expect(logs.all[0].complete).to be(true)
+  end
+
+  it "handles fragmented horizontal editing without allowing screen controls through" do
+    source = "\e[31m界abc\e[2DXY\r\e[Kdone\e[2J\n"
+    source.bytes.each { |byte| output.feed(byte.chr) }
+    expect(logs.all[0].text.gsub(Foruiman::ANSI::SGR, "")).to eq("done")
+    expect(logs.all[0].text).to include("\e[31m")
+    expect(logs.all[0].text).not_to include("\e[2J", "\e[K", "\r", "\b")
+  end
+
+  it "records a Reline prompt and submitted command once across a redraw" do
+    prompt = "\e[?25l\e[1G\e[K\e[1G\e[0m(byebug) \e[0m\e[?25h\e[10G"
+    submitted = "\e[?25l\e[1G\e[K\e[?25h\e[1G(byebug) Settings.value\r\n\e[1G424242\n"
+    (prompt + submitted + prompt).bytes.each { |byte| output.feed(byte.chr) }
+    expect(logs.all.map { |record| record.text.gsub(Foruiman::ANSI::SGR, "") }).to eq(
+      ["(byebug) Settings.value", "424242", "(byebug) "]
+    )
+  end
+
+  it "bounds malicious horizontal positions and long output after a redraw" do
+    output.feed("\e[99999999999G#{'界' * 30_000}\n")
+    expect(events.map { |record| record.text.bytesize }.max).to be <= described_class::MAX_BYTES
+    expect(events.select(&:complete).sum { |record| record.text.count("界") }).to eq(30_000)
+  end
+
   it "bounds unterminated escape payloads and newline-free output" do
     output.feed("\e]52;c;#{'x' * 100_000}")
     output.feed("\a#{'界' * 30_000}")
