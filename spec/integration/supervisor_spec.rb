@@ -74,23 +74,18 @@ RSpec.describe Foruiman::Engine do
     expect(engine.logs["web"].map(&:text)).to include("stdin tty=true")
   end
 
-  it "disables and re-enables one process without interrupting peers" do
+  it "stops and starts one process without interrupting peers" do
     engine = build_engine({ "web" => fixture("ticker"), "peer" => fixture("ticker") })
     engine.start_all
     web = engine.state("web")
     peer_pid = engine.state("peer").pid
     first_pid = web.pid
-    engine.disable("web")
-    expect(web.enabled).to be(false)
-    eventually(engine) { web.status == :disabled }
+    engine.stop("web")
+    eventually(engine) { web.status == :stopped }
     expect(alive?(first_pid)).to be(false)
     expect(alive?(peer_pid)).to be(true)
-    engine.restart("web")
-    3.times { engine.tick(timeout: 0.01) }
-    expect(web.generation).to eq(1)
-    engine.enable("web")
+    engine.start("web")
     eventually(engine) { web.status == :running && web.generation == 2 }
-    expect(web.enabled).to be(true)
     expect(web.pid).not_to eq(first_pid)
     expect(engine.state("peer").pid).to eq(peer_pid)
   end

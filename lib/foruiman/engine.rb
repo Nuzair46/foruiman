@@ -14,7 +14,7 @@ class Foruiman::Engine
   INPUT_BUDGET = 64 * 1024
   State = Struct.new(:name, :process, :port, :pid, :pgid, :status, :exit_status,
                      :generation, :restart_pending, :deadline, :reaped, :group_gone,
-                     :enabled, :input, :input_buffer,
+                     :input, :input_buffer,
                      keyword_init: true)
   Event = Data.define(:type, :name, :pid, :status, :record, :message)
 
@@ -63,7 +63,7 @@ class Foruiman::Engine
     process = Foruiman::Process.new(command, cwd: root, env: env)
     state = State.new(name: name.freeze, process: process, port: @base_port + (processes.size * 100),
                       status: :pending, generation: 0, restart_pending: false, reaped: true, group_gone: true,
-                      enabled: true, input_buffer: +"".b)
+                      input_buffer: +"".b)
     @names[name] = state
     processes << state
     state
@@ -127,7 +127,7 @@ class Foruiman::Engine
       end
       @started = true
     end
-    targets.each { |entry| spawn_process(entry) if entry.enabled && !entry.pgid }
+    targets.each { |entry| spawn_process(entry) unless entry.pgid }
     self
   end
 
@@ -139,7 +139,6 @@ class Foruiman::Engine
     return start(name) unless @started
 
     entry = state(name)
-    return unless entry.enabled
     return if entry.restart_pending
 
     entry.restart_pending = true
@@ -160,44 +159,6 @@ class Foruiman::Engine
     entry.status = :stopping
     lifecycle(entry, :stopping, "stopping")
     terminate(entry)
-  end
-
-  def disable(name)
-    return if @shutdown || @closed
-
-    entry = state(name)
-    return unless entry.enabled
-
-    entry.enabled = false
-    entry.restart_pending = false
-    if entry.pgid
-      entry.status = :disabling
-      lifecycle(entry, :disabling, "disabling")
-      terminate(entry)
-    else
-      entry.status = :disabled
-      lifecycle(entry, :disabled, "disabled")
-    end
-    self
-  end
-
-  def enable(name)
-    return if @shutdown || @closed
-
-    entry = state(name)
-    return if entry.enabled
-
-    entry.enabled = true
-    lifecycle(entry, :enabled, "enabled")
-    if entry.pgid
-      entry.restart_pending = true
-      entry.status = :restarting
-    elsif @started
-      spawn_process(entry)
-    else
-      entry.status = :pending
-    end
-    self
   end
 
   def write_input(name, bytes)
@@ -372,7 +333,7 @@ class Foruiman::Engine
       entry.reaped = true
       entry.exit_status = result.last
       success = entry.exit_status.success?
-      transitioning = %i[stopping restarting disabling].include?(entry.status)
+      transitioning = %i[stopping restarting].include?(entry.status)
       @failed ||= !success && !transitioning
       entry.status = success ? :exited : :failed unless transitioning
       lifecycle(entry, :exited, termination_message_for(entry.exit_status))
@@ -397,7 +358,7 @@ class Foruiman::Engine
       close_input(entry)
       entry.pgid = nil
       entry.deadline = nil
-      entry.status = entry.enabled ? :stopped : :disabled if %i[stopping disabling].include?(entry.status)
+      entry.status = :stopped if entry.status == :stopping
       spawn_process(entry) if entry.restart_pending && !@shutdown
     end
   end

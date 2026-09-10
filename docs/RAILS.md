@@ -48,8 +48,8 @@ Select the web tab and press `r` to restart Rails without interrupting the worke
 or asset watcher. On the `all` tab, `r` restarts all entries; `R` does so from any
 tab. Default watch modes stay running because their stdin remains open. When Rails
 stops in Pry, IRB, or another line-oriented debugger, select `web`, press `i`, and
-interact normally; Ctrl-] returns keyboard control to Foruiman. Press `d` to disable
-or re-enable a selected entry without editing the Procfile. The header shows the
+interact normally; Ctrl-] returns keyboard control to Foruiman. Press `s` to stop
+the selected entry and press it again to start it. The header shows the
 active Procfile. `q` or Ctrl-C stops all owned process
 groups, including grandchildren, before returning to the shell.
 

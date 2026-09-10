@@ -16,8 +16,7 @@ module Foruiman::TUI
       [nil, "f / G / End", "Follow newest output", nil],
       [nil, "Space", "Pause / resume following", nil],
       ["⚙ PROCESSES", "r / R", "Restart selected / all", "r on all restarts all"],
-      [nil, "s / S", "Stop selected / all", nil],
-      [nil, "d", "Disable / enable selected", "disabled entries stay off on restart all"],
+      [nil, "s / S", "Start/stop selected / stop all", "s follows the selected state"],
       ["⌨ INPUT", "i", "Send keys to selected process", "Ctrl-] returns to Foruiman"],
       ["◇ SESSION", "? / Escape", "Close help", nil],
       [nil, "q / Ctrl-C", "Stop processes and quit", nil]
@@ -262,19 +261,30 @@ module Foruiman::TUI
              elsif state.help
                @theme.paint(" ? / Escape close help", :muted)
              else
-               shortcuts(state)
+               shortcuts(state, engine)
              end
       distribute(left, quit, @width)
     end
 
-    def shortcuts(state)
+    def shortcuts(state, engine)
       restart = ["r", state.name == "all" ? "↻ restart all" : "↻ restart"]
+      toggle = if state.name == "all"
+                 ["S", "■ stop all"]
+               elsif process_active?(engine.state(state.name))
+                 ["s", "■ stop"]
+               else
+                 ["s", "▶ start"]
+               end
       pairs = [%w[Tab switch], ["↑↓", "scroll"], %w[f follow], restart,
-               %w[d enable/disable], %w[i input], ["?", "help"]]
-      pairs = [restart, %w[d toggle], %w[i input], ["?", "help"]] if @width < 85
+               toggle, %w[i input], ["?", "help"]]
+      pairs = [restart, toggle, %w[i input], ["?", "help"]] if @width < 85
       pairs.map do |key, label|
         @theme.paint(" #{key} ", :accent, bold: true) + @theme.paint(" #{label}  ", :muted)
       end.join
+    end
+
+    def process_active?(entry)
+      entry.pgid || %i[running restarting stopping].include?(entry.status)
     end
 
     def border(left, right = "", bottom: false)

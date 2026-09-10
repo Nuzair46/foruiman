@@ -7,8 +7,8 @@
 - Keep child stdin open so default watcher modes continue running.
 - Add per-process TTY input from the TUI: select a process, press `i`, and use
   Ctrl-] to return to Foruiman. Ctrl-C interrupts the attached process group.
-- Add `d` to disable or re-enable a selected process without affecting peers;
-  disabled entries remain off during restart-all.
+- Make `s` stop a running selected process and start it again once stopped,
+  without affecting peers. Use clear `▶` running and `■` stopped glyphs.
 
 - Test Ruby 3.2, 3.3, 3.4, and 4.0 in a reusable CI workflow and keep the
   development dependency set compatible with Ruby 3.2.

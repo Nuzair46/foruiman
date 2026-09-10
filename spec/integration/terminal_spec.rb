@@ -111,17 +111,17 @@ RSpec.describe "PTY and signal integration" do
     expect(status).to be_success
   end
 
-  it "disables and re-enables a process from the TUI" do
+  it "stops and starts a process with the same TUI key" do
     pidfile = File.join(@directory, "toggle.pids")
     write_file("Procfile", "web: #{fixture('ticker', pidfile)}\n")
     status = with_terminal(*command) do |master, _slave, _pid, output|
       read_until(master, output, "ready")
       first_pid = File.read(pidfile).to_i
-      master.write("1d")
-      read_until(master, output, "disabled")
+      master.write("1s")
+      read_until(master, output, "stopped")
       eventually { !alive?(first_pid) }
-      master.write("d")
-      read_until(master, output, "Enabling web")
+      master.write("s")
+      read_until(master, output, "Starting web")
       eventually { File.read(pidfile).to_i != first_pid && alive?(File.read(pidfile).to_i) }
       master.write("q")
     end
@@ -140,7 +140,7 @@ RSpec.describe "PTY and signal integration" do
         old_pids = pidfiles.map { |file| File.read(file).to_i }
         write_file("history.pids", old_pids.join("\n"))
         master.write(keys)
-        read_until(master, output, "Restarting all enabled processes")
+        read_until(master, output, "Restarting all processes")
         eventually do
           bytes = master.read_nonblock(65_536, exception: false)
           output << bytes if bytes.is_a?(String)

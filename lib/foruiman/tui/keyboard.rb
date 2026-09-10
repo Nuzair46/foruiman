@@ -12,7 +12,7 @@ module Foruiman::TUI
       "\t" => :next, "h" => :previous, "l" => :next, "k" => :up, "j" => :down,
       "g" => :home, "G" => :end, "f" => :follow, " " => :toggle_follow,
       "r" => :restart, "R" => :restart_all, "s" => :stop, "S" => :stop_all,
-      "d" => :toggle_process, "i" => :input, "?" => :help, "q" => :quit, "\x03" => :quit,
+      "i" => :input, "?" => :help, "q" => :quit, "\x03" => :quit,
       "\x15" => :page_up, "\x04" => :page_down
     }.freeze
 

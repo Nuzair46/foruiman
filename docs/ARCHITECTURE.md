@@ -35,8 +35,7 @@ begin
   engine.tick(timeout: 0.03)
   engine.restart("web")            # asynchronous; peers keep running
   engine.stop("worker")            # asynchronous
-  engine.disable("worker")         # stop it and keep it out of restart-all
-  engine.enable("worker")          # start it again
+  engine.start("worker")           # start it again once stopped
   engine.shutdown                  # cancels replacements and requests group cleanup
   engine.tick until engine.finished?
 ensure
@@ -85,7 +84,7 @@ read OS theme files or override palette entries; child SGR resets restore termin
 defaults. The header uses the engine's `procfile_path` to identify the loaded file.
 `LogFormatter` aligns timestamps, process names, stream markers, and content.
 Complete frames reset styles at each row. `Application` connects navigation,
-process controls, and selected-child input to the engine and limits drawing to 30 FPS. Resize handling reads current
+start/stop controls, and selected-child input to the engine and limits drawing to 30 FPS. Resize handling reads current
 terminal dimensions each loop; it does not replace an application's WINCH handler.
 
 `Plain` prints completed records and runs to natural completion. `Diagnostics`

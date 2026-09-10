@@ -73,8 +73,8 @@ module Foruiman::TUI
       when :toggle_follow then state.viewport.toggle(buffer, height)
       when :help then state.help = !state.help
       when :escape then state.help = false
-      when :restart, :stop then control(key)
-      when :toggle_process then toggle_process
+      when :restart then control(key)
+      when :stop then toggle_process
       when :input then begin_input
       when :restart_all, :stop_all
         control_all(key == :restart_all ? :restart : :stop)
@@ -131,14 +131,18 @@ module Foruiman::TUI
 
     def toggle_process
       if state.name == "all"
-        feedback("Select a process to enable or disable it")
+        feedback("Select a process first; S stops all processes")
         return
       end
 
       entry = @engine.state(state.name)
-      action = entry.enabled ? :disable : :enable
-      @engine.public_send(action, state.name)
-      feedback("#{action == :disable ? 'Disabling' : 'Enabling'} #{state.name}")
+      if entry.pgid
+        @engine.stop(state.name)
+        feedback("Stopping #{state.name}")
+      else
+        @engine.start(state.name)
+        feedback("Starting #{state.name}")
+      end
     end
 
     def control(action)
@@ -149,10 +153,6 @@ module Foruiman::TUI
           feedback("Select a process first; S stops all processes")
         end
       else
-        if action == :restart && !@engine.state(state.name).enabled
-          feedback("#{state.name} is disabled; press d to enable it")
-          return
-        end
         @engine.public_send(action, state.name)
         feedback("#{action == :restart ? 'Restarting' : 'Stopping'} #{state.name}")
       end
@@ -160,8 +160,7 @@ module Foruiman::TUI
 
     def control_all(action)
       @engine.processes.each { |entry| @engine.public_send(action, entry.name) }
-      scope = action == :restart ? "all enabled processes" : "all processes"
-      feedback("#{action == :restart ? 'Restarting' : 'Stopping'} #{scope}")
+      feedback("#{action == :restart ? 'Restarting' : 'Stopping'} all processes")
     end
 
     def feedback(message)

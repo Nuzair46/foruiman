@@ -12,12 +12,12 @@ module Foruiman::TUI
     }.freeze
     PROCESS_COLORS = %i[cyan amber mauve green blue red].freeze
     STATUS_COLORS = {
-      pending: :faint, running: :green, restarting: :amber, stopping: :amber, disabling: :amber,
-      disabled: :muted, stopped: :muted, exited: :muted, failed: :red
+      pending: :faint, running: :green, restarting: :amber, stopping: :amber,
+      stopped: :muted, exited: :muted, failed: :red
     }.freeze
     STATUS_MARKS = {
-      pending: "○", running: "●", restarting: "↻", stopping: "◌", disabling: "◌",
-      disabled: "◇", stopped: "■", exited: "✓", failed: "×"
+      pending: "○", running: "▶", restarting: "↻", stopping: "◼",
+      stopped: "■", exited: "✓", failed: "✕"
     }.freeze
 
     attr_reader :enabled

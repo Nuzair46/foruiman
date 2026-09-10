@@ -18,7 +18,7 @@ Foruiman is a fork-derived MVP, not a drop-in replacement for every Foreman feat
 | Restart | Stop only the affected group, wait for descendants and output, then replace |
 | Shutdown | TERM, five-second grace, KILL; track groups after leader exit; restore prior signal handlers |
 | Output | Separate stdout/stderr metadata; bounded logs and live partial records |
-| Terminal | Tabs, independent scroll/follow, restart, stop, enable/disable, and selected-process input controls |
+| Terminal | Tabs, independent scroll/follow, restart, start/stop, and selected-process input controls |
 | Plain exit | Wait for all processes; status 0/1; explicit orderly shutdown returns 0 |
 | Interactive exit | Remain open after all processes exit; quit explicitly |
 

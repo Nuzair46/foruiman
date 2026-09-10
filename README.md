@@ -48,8 +48,8 @@ restarting one process does not interrupt the others.
 
 Each TUI process gets its own open terminal input, so asset builders using their
 default `--watch` mode stay alive. Select a process and press `i` to type into a
-debugger such as Pry or IRB; press Ctrl-] to return to Foruiman. Press `d` to
-disable or re-enable the selected process for the rest of the session.
+debugger such as Pry or IRB; press Ctrl-] to return to Foruiman. Press `s` to
+stop the selected process and press it again to start that process.
 
 ## Options
 
@@ -77,8 +77,7 @@ disable or re-enable the selected process for the rest of the session.
 | `i` / Ctrl-] | Send input to the selected process / return to Foruiman |
 | `r` | Restart the selected process, or all from `all` |
 | `R` | Restart all processes |
-| `s` / `S` | Stop selected / stop all |
-| `d` | Disable or re-enable the selected process |
+| `s` / `S` | Start or stop selected / stop all |
 | `?` / Escape | Toggle help / close help |
 | `q` / Ctrl-C | Stop processes and quit |
 
