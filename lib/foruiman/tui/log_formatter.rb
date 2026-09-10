@@ -30,6 +30,7 @@ module Foruiman::TUI
 
     def stream_style(stream)
       case stream
+      when :stdin then ["in ", :cyan]
       when :stderr then ["err", :red]
       when :lifecycle then ["sys", :amber]
       else ["out", :faint]
@@ -38,6 +39,7 @@ module Foruiman::TUI
 
     def body_color(stream)
       case stream
+      when :stdin then :cyan
       when :stderr then :red
       when :lifecycle then :muted
       else :text

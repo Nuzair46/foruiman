@@ -16,8 +16,8 @@ module Foruiman::TUI
       stopped: :muted, exited: :muted, failed: :red
     }.freeze
     STATUS_MARKS = {
-      pending: "○", running: "●", restarting: "↻", stopping: "◌",
-      stopped: "■", exited: "✓", failed: "×"
+      pending: "○", running: "▶", restarting: "↻", stopping: "◼",
+      stopped: "■", exited: "✓", failed: "✕"
     }.freeze
 
     attr_reader :enabled

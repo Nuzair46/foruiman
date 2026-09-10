@@ -2,7 +2,7 @@
 
 `Procfile` retains Foreman's ordered parser/writer API with strict file validation.
 `Env` retains its quoting rules and adds a non-mutating precedence merge. `Process`
-wraps `/bin/sh -c` with a new process group, two output streams, and null stdin.
+wraps `/bin/sh -c` with a new process group, two output streams, and configurable stdin.
 `CLI < Thor` validates the full configuration before starting the engine.
 
 `Engine` owns registration, PID/group tracking, nonblocking pipes, child reaping,
@@ -35,6 +35,7 @@ begin
   engine.tick(timeout: 0.03)
   engine.restart("web")            # asynchronous; peers keep running
   engine.stop("worker")            # asynchronous
+  engine.start("worker")           # start it again once stopped
   engine.shutdown                  # cancels replacements and requests group cleanup
   engine.tick until engine.finished?
 ensure
@@ -49,6 +50,18 @@ handlers. An embedding loop that drives `tick` directly owns its signal handling
 process cleanup. `term_timeout:` exists for deterministic embedded tests; CLI
 shutdown always uses five seconds. `state(name)` exposes lifecycle state for
 rendering; callers should not mutate it.
+
+Children inherit the configured input stream in plain and embedded use. Before
+startup, `manage_input!` gives each child a dedicated pseudo-terminal while the
+caller retains the real terminal; `write_input(name, bytes)` forwards input,
+`interrupt_process(name)` sends SIGINT to that process group, and `resize_inputs` keeps
+the pseudo-terminals sized with the UI. The TUI uses this mode so watch commands
+do not see EOF and only the selected process receives interactive input.
+
+The TUI edits commands locally in a bounded `InputLine`, with independent history
+for each process, then sends a complete line on Enter. Ctrl-X leaves input mode.
+`OutputLine` interprets carriage returns, backspaces, horizontal cursor moves and
+line erasure before recording child output; screen controls remain suppressed.
 
 `LogStore` uses per-process `Ring` instances and an aggregate `Ring`, each with O(1)
 append, eviction, record replacement, and identity lookup. Immutable `Data` records
@@ -74,9 +87,9 @@ clips rows safely. `Theme` uses the terminal's ANSI palette, default foreground 
 background, and reverse-video selection, with a monochrome fallback. It does not
 read OS theme files or override palette entries; child SGR resets restore terminal
 defaults. The header uses the engine's `procfile_path` to identify the loaded file.
-`LogFormatter` aligns timestamps,
-process names, stream markers, and content. Complete frames reset styles at each row. `Application` connects input and lifecycle
-commands to the engine and limits drawing to 30 FPS. Resize handling reads current
+`LogFormatter` aligns timestamps, process names, stream markers, and content.
+Complete frames reset styles at each row. `Application` connects navigation,
+start/stop controls, and selected-child input to the engine and limits drawing to 30 FPS. Resize handling reads current
 terminal dimensions each loop; it does not replace an application's WINCH handler.
 
 `Plain` prints completed records and runs to natural completion. `Diagnostics`

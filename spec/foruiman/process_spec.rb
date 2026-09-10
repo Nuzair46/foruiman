@@ -2,11 +2,11 @@
 
 # Adapted execution/environment cases from Foreman's process_spec.rb.
 RSpec.describe Foruiman::Process do
-  def capture(command, env: ENV.to_h, custom_env: {})
+  def capture(command, env: ENV.to_h, custom_env: {}, input: File::NULL)
     process = described_class.new(command, env: env, cwd: @directory)
     reader, writer = IO.pipe
     error_reader, error_writer = IO.pipe
-    pid = process.run(output: writer, error: error_writer, env: custom_env)
+    pid = process.run(input: input, output: writer, error: error_writer, env: custom_env)
     writer.close
     error_writer.close
     result = [reader.read, error_reader.read]
@@ -43,5 +43,15 @@ RSpec.describe Foruiman::Process do
     expect(stdout).to include('"FOO":"bar"', '"stdin_eof":true', @directory)
     expect(ENV.to_h).to eq(before)
     expect(Dir.pwd).to eq(cwd)
+  end
+
+  it "passes an explicitly supplied input stream to the child" do
+    input_reader, input_writer = IO.pipe
+    input_writer.write("hello\n")
+    input_writer.close
+    stdout, = capture("read line; printf 'received %s\\n' \"$line\"", input: input_reader)
+    expect(stdout).to eq("received hello\n")
+  ensure
+    [input_reader, input_writer].compact.each { |io| io.close unless io.closed? }
   end
 end

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.0
+
+- Keep child stdin open so default watcher modes continue running.
+- Add per-process TTY input from the TUI: select a process, press `i`, and use
+  Ctrl-X to return to Foruiman. Ctrl-C interrupts the attached process group.
+- Add a command input bar with local backspace, cursor editing and per-process
+  history. Interpret debugger redraws instead of appending repeated prompts.
+- Make `s` stop a running selected process and start it again once stopped,
+  without affecting peers. Use clear `▶` running and `■` stopped glyphs.
+- Make `s` on the `all` tab stop every process, matching the scope of `r`.
+
 - Test Ruby 3.2, 3.3, 3.4, and 4.0 in a reusable CI workflow and keep the
   development dependency set compatible with Ruby 3.2.
 - Add a tag-driven RubyGems trusted-publishing workflow gated by the full CI suite.

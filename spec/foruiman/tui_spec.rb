@@ -38,6 +38,18 @@ RSpec.describe Foruiman::TUI::Viewport do
 end
 
 RSpec.describe Foruiman::TUI::State do
+  it "keeps command history separate for each process" do
+    state = described_class.new(%w[web worker])
+    state.input_target = "web"
+    state.input_line.feed("Settings.value\n")
+    state.input_target = "worker"
+    state.input_line.feed("\e[A")
+    expect(state.input_line.text).to eq("")
+    state.input_target = "web"
+    state.input_line.feed("\e[A")
+    expect(state.input_line.text).to eq("Settings.value")
+  end
+
   it "preserves ordered tabs and independent follow/scroll state" do
     state = described_class.new(%w[web worker])
     expect(state.tabs).to eq(%w[web worker all])
@@ -57,7 +69,9 @@ RSpec.describe Foruiman::TUI::Keyboard do
   it "decodes fragmented sequences, numbers and shortcuts" do
     keyboard = described_class.new
     expect(keyboard.feed("\e[", now: 0)).to eq([])
-    expect(keyboard.feed("A\t1rR0q", now: 0.01)).to eq([:up, :next, 1, :restart, :restart_all, 0, :quit])
+    expect(keyboard.feed("A\t1rRi0q", now: 0.01)).to eq(
+      [:up, :next, 1, :restart, :restart_all, :input, 0, :quit]
+    )
     expect(keyboard.feed("\e[5~\e[6~\e[Z\x03")).to eq(%i[page_up page_down previous quit])
   end
 
@@ -72,6 +86,24 @@ RSpec.describe Foruiman::TUI::Keyboard do
 end
 
 RSpec.describe Foruiman::TUI::Renderer do
+  it "keeps the command cursor visible across narrow layouts and resizing" do
+    engine = build_engine({ "web" => fixture("ticker") })
+    engine.start_all
+    state = Foruiman::TUI::State.new(["web"])
+    state.select(0)
+    state.input_target = "web"
+    state.input_line.feed("#{'界' * 80}tail")
+    renderer = described_class.new
+    [[24, 100], [8, 38], [6, 26]].each do |rows, columns|
+      frame = renderer.render(state, engine, rows: rows, columns: columns)
+      expect(frame).to include("Ctrl-X")
+      expect(frame).to include("tail") if rows >= 8
+      lines = frame.delete_prefix("\e[H").split("\r\n")
+      expect(lines.size).to eq(rows)
+      expect(lines.map { |line| described_class.width(line.delete_prefix("\e[2K")) }.max).to be < columns
+    end
+  end
+
   it "measures Unicode graphemes, wide characters, combining marks, and styles" do
     expect(described_class.width("\e[31m界é👩‍💻\e[0m")).to eq(5)
     text = described_class.truncate("\e[31m界é👩‍💻 tail", 3)
@@ -121,6 +153,21 @@ RSpec.describe Foruiman::TUI::Application do
     eventually(engine) { engine.processes.all? { |entry| entry.generation == 2 } }
     expect(application.state.feedback).to eq("Restarting all processes")
     expect(engine.logs.all.map(&:sequence)).to include(*retained)
+  end
+
+  it "enters child input mode and toggles the selected process between running and stopped" do
+    engine = build_engine({ "web" => fixture("ticker") })
+    engine.start_all
+    application = described_class.new(engine)
+    application.state.select(0)
+    application.handle(:input, 10)
+    expect(application.state.input_target).to eq("web")
+    application.handle(:stop, 10)
+    eventually(engine) { engine.state("web").status == :stopped }
+    expect(application.state.feedback).to eq("Stopping web")
+    application.handle(:stop, 10)
+    expect(engine.state("web").status).to eq(:running)
+    expect(application.state.feedback).to eq("Starting web")
   end
 
   it "stays open after children exit and processes restart, tab and quit input" do
@@ -313,5 +360,16 @@ RSpec.describe "Terminal theme and layout" do
     footer = plain_rows(renderer.render(state, engine, rows: 24, columns: 100)).last
     expect(footer).to include("restart")
     expect(footer).not_to include("restart all")
+  end
+
+  it "shows clear running and stopped glyphs with a state-aware start/stop action" do
+    state, engine = preview
+    state.select(0)
+    renderer = Foruiman::TUI::Renderer.new
+    running = plain_rows(renderer.render(state, engine, rows: 24, columns: 100)).join("\n")
+    expect(running).to include("▶", "■ stop")
+    engine.state("web").status = :stopped
+    stopped = plain_rows(renderer.render(state, engine, rows: 24, columns: 100)).join("\n")
+    expect(stopped).to include("■", "▶ start")
   end
 end

@@ -63,10 +63,11 @@ module Foruiman::ANSI
     end
   end
 
-  # Incremental byte parser: only text, newlines, and SGR can leave this class.
-  # OSC (including clipboard), DCS, cursor controls, and other escapes are dropped.
+  # Screen controls are discarded. Output may opt into horizontal line editing
+  # controls, which it interprets before storing or displaying any records.
   class Decoder
-    def initialize
+    def initialize(line_controls: false)
+      @line_controls = line_controls
       @state = :text
       @escape = +""
       @pending = +"".b
@@ -92,6 +93,7 @@ module Foruiman::ANSI
         case byte
         when 27 then @state = :escape
         when 9 then output << "    "
+        when 8, 13 then output << byte if @line_controls
         when 10, 32..126, 128..255 then output << byte
         end
       when :escape
@@ -108,6 +110,9 @@ module Foruiman::ANSI
       when :csi
         if byte.between?(64, 126)
           output << "\e[#{@escape}m" if byte == 109 && @escape.match?(/\A[0-9;:]*\z/)
+          if @line_controls && [67, 68, 71, 75].include?(byte) && @escape.match?(/\A[0-9]*\z/)
+            output << "\e[#{@escape}#{byte.chr}"
+          end
           @state = :text
         elsif @escape.bytesize < 96
           @escape << byte

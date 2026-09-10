@@ -16,7 +16,8 @@ module Foruiman::TUI
       [nil, "f / G / End", "Follow newest output", nil],
       [nil, "Space", "Pause / resume following", nil],
       ["⚙ PROCESSES", "r / R", "Restart selected / all", "r on all restarts all"],
-      [nil, "s / S", "Stop selected / all", nil],
+      [nil, "s / S", "Start/stop selected / stop all", "s on all stops all"],
+      ["⌨ INPUT", "i", "Edit a command; Enter sends", "Ctrl-X returns to Foruiman"],
       ["◇ SESSION", "? / Escape", "Close help", nil],
       [nil, "q / Ctrl-C", "Stop processes and quit", nil]
     ].freeze
@@ -30,16 +31,16 @@ module Foruiman::TUI
       rows >= 14 && columns >= 60
     end
 
-    def self.log_height(rows:, columns:)
+    def self.log_height(rows:, columns:, input: false)
       return 0 if rows < 6 || columns < 24
 
-      rows - (expanded?(rows: rows, columns: columns) ? 7 : 5)
+      rows - (expanded?(rows: rows, columns: columns) ? 7 : 5) - (input && rows >= 8 ? 2 : 0)
     end
 
     def render(state, engine, rows:, columns:)
       @width = [columns - 1, 1].max
       @inside = [@width - 4, 0].max
-      @height = self.class.log_height(rows: rows, columns: columns)
+      @height = self.class.log_height(rows: rows, columns: columns, input: state.input?)
       return tiny_frame(state, engine, rows) if @height.zero?
 
       lines = [header(engine)]
@@ -54,6 +55,7 @@ module Foruiman::TUI
       lines << log_header(state, engine)
       lines.concat(state.help ? help_rows : log_rows(state, engine))
       lines << log_footer(state, engine)
+      lines.concat(input_rows(state)) if state.input? && rows >= 8
       lines << controls(state, engine)
       frame(lines, rows)
     end
@@ -157,7 +159,9 @@ module Foruiman::TUI
                else
                  engine.state(state.name).status == :running
                end
-      mode = if !state.viewport.following
+      mode = if state.input?
+               @theme.paint(" ▶ INPUT ", :cyan)
+             elsif !state.viewport.following
                @theme.paint(" Ⅱ PAUSED ", :amber)
              elsif active
                @theme.paint(" ● LIVE ", :green)
@@ -244,6 +248,12 @@ module Foruiman::TUI
     end
 
     def controls(state, engine)
+      if state.input?
+        left = @theme.paint(" Enter send · ↑↓ history · Ctrl-C interrupt", :muted)
+        right = @theme.paint(" Ctrl-X back ", :amber, bold: true)
+        return distribute(left, right, @width)
+      end
+
       quit = @theme.paint(" q ", :accent, bold: true) + @theme.paint(" × quit ", :muted)
       left = if engine.shutting_down?
                @theme.paint(" ◌ Stopping process groups · TERM → KILL after 5s", :amber)
@@ -252,18 +262,44 @@ module Foruiman::TUI
              elsif state.help
                @theme.paint(" ? / Escape close help", :muted)
              else
-               shortcuts(state)
+               shortcuts(state, engine)
              end
       distribute(left, quit, @width)
     end
 
-    def shortcuts(state)
+    def shortcuts(state, engine)
       restart = ["r", state.name == "all" ? "↻ restart all" : "↻ restart"]
-      pairs = [%w[Tab switch], ["↑↓", "scroll"], %w[f follow], restart, ["?", "help"]]
-      pairs = [restart, ["?", "help"]] if @width < 65
+      toggle = if state.name == "all"
+                 ["s", "■ stop all"]
+               elsif process_active?(engine.state(state.name))
+                 ["s", "■ stop"]
+               else
+                 ["s", "▶ start"]
+               end
+      pairs = [%w[Tab switch], ["↑↓", "scroll"], %w[f follow], restart,
+               toggle, %w[i input], ["?", "help"]]
+      pairs = [restart, toggle, %w[i input], ["?", "help"]] if @width < 85
       pairs.map do |key, label|
         @theme.paint(" #{key} ", :accent, bold: true) + @theme.paint(" #{label}  ", :muted)
       end.join
+    end
+
+    def process_active?(entry)
+      entry.pgid || %i[running restarting stopping].include?(entry.status)
+    end
+
+    def input_rows(state)
+      editor = state.input_line
+      parts = editor.text.scan(/\X/)
+      before = parts.take(editor.cursor)
+      current = parts[editor.cursor] || " "
+      after = parts.drop(editor.cursor + 1).join
+      available = [@inside - 5, 1].max
+      before.shift while !before.empty? && Text.width(before.join + current) > available
+      draft = @theme.paint("❯ ", :cyan, bold: true) + before.join +
+              @theme.paint(current,
+                           selected: true) + Text.clip(after, [available - Text.width(before.join + current), 0].max)
+      [border(@theme.paint(" ⌨ Input to #{state.input_target} ", :cyan, bold: true)), panel(draft)]
     end
 
     def border(left, right = "", bottom: false)
@@ -290,7 +326,7 @@ module Foruiman::TUI
       title = @theme.paint(" FORUIMAN", :accent, bold: true)
       message = engine.shutting_down? ? " Stopping…" : " #{state.name} · enlarge terminal"
       lines = [title, @theme.paint(message, :muted)]
-      lines[rows - 1] = @theme.paint(" q quit", :accent) if rows > 2
+      lines[rows - 1] = @theme.paint(state.input? ? " Ctrl-X back" : " q quit", :accent) if rows > 2
       frame(lines, rows)
     end
 

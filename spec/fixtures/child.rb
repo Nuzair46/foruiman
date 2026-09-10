@@ -2,6 +2,7 @@
 
 # All subprocess behavior is Ruby-only; no shell utilities or Rails required.
 require "json"
+require "io/wait"
 $stdout.sync = $stderr.sync = true
 
 mode = ARGV.shift
@@ -23,6 +24,18 @@ when "burst"
   count.times { |index| puts "line #{index}" }
 when "long"
   print "x" * ((16_384 * 20) + 1)
+when "watch"
+  puts "stdin tty=#{$stdin.tty?}"
+  ready = $stdin.wait_readable(0.2)
+  eof = ready && $stdin.read_nonblock(1, exception: false).nil?
+  puts(eof ? "stdin closed" : "watching")
+  loop { sleep 1 }
+when "input"
+  puts "stdin tty=#{$stdin.tty?}"
+  print "debug> "
+  line = $stdin.gets
+  puts "received #{line&.chomp.inspect}"
+  loop { sleep 1 }
 when "ticker", "ignore_term"
   Signal.trap("TERM", "IGNORE") if mode == "ignore_term"
   File.write(ARGV[0], Process.pid.to_s) if ARGV[0]

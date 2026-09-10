@@ -4,7 +4,7 @@ Foruiman is a fork-derived MVP, not a drop-in replacement for every Foreman feat
 
 | Area | Foruiman behavior |
 | --- | --- |
-| Identity | `foruiman` gem/executable, `Foruiman` namespace, version 0.1.2 |
+| Identity | `foruiman` gem/executable, `Foruiman` namespace, version 0.2.0 |
 | Runtime | Ruby 3.2+, POSIX process groups; Linux CI |
 | CLI | Thor-based `start [PROCESS]`, `check`, `version`, and `help` |
 | Excluded features | No export, scaling/formation, `run`, `.foreman` YAML, custom shutdown timeout, forced color, or timestamp toggle |
@@ -18,10 +18,10 @@ Foruiman is a fork-derived MVP, not a drop-in replacement for every Foreman feat
 | Restart | Stop only the affected group, wait for descendants and output, then replace |
 | Shutdown | TERM, five-second grace, KILL; track groups after leader exit; restore prior signal handlers |
 | Output | Separate stdout/stderr metadata; bounded logs and live partial records |
-| Terminal | Tabs, independent scroll/follow, restart and stop controls; no child stdin |
+| Terminal | Tabs, independent scroll/follow, restart, start/stop, and selected-process input controls |
 | Plain exit | Wait for all processes; status 0/1; explicit orderly shutdown returns 0 |
 | Interactive exit | Remain open after all processes exit; quit explicitly |
 
-Commands needing a PTY, interactive child input, or background daemonization are
-outside this release. Remote process control, persistence across Foruiman sessions,
+Full-screen child terminal applications and background daemonization are outside
+this release. Remote process control, persistence across Foruiman sessions,
 search, horizontal scrolling, and log export are not provided.

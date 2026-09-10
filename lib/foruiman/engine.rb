@@ -11,14 +11,16 @@ class Foruiman::Engine
   TERM_TIMEOUT = 5.0
   READ_CHUNK = 4096
   READ_BUDGET = 64 * 1024
+  INPUT_BUDGET = 64 * 1024
   State = Struct.new(:name, :process, :port, :pid, :pgid, :status, :exit_status,
                      :generation, :restart_pending, :deadline, :reaped, :group_gone,
+                     :input, :input_buffer,
                      keyword_init: true)
   Event = Data.define(:type, :name, :pid, :status, :record, :message)
 
   attr_reader :logs, :env, :processes, :root, :procfile_path
 
-  def initialize(procfile: nil, root: Dir.pwd, env: ENV.to_h, port: 5000, log_lines: 10_000,
+  def initialize(procfile: nil, root: Dir.pwd, env: ENV.to_h, input: $stdin, port: 5000, log_lines: 10_000,
                  term_timeout: TERM_TIMEOUT)
     raise Foruiman::Error, "port must be an integer in 1..65535" unless port.is_a?(Integer) && (1..65_535).cover?(port)
     raise Foruiman::Error, "log-lines must be a positive integer" unless log_lines.is_a?(Integer) && log_lines.positive?
@@ -27,6 +29,8 @@ class Foruiman::Engine
     raise Foruiman::Error, "working directory does not exist: #{@root}" unless File.directory?(@root)
 
     @env = env.dup.freeze
+    @input = input
+    @managed_input = false
     @base_port = port
     @log_lines = log_lines
     @term_timeout = term_timeout
@@ -34,6 +38,7 @@ class Foruiman::Engine
     @names = {}
     @running = {}
     @readers = {}
+    @inputs = {}
     @listeners = []
     @shutdown = false
     @explicit_shutdown = false
@@ -57,7 +62,8 @@ class Foruiman::Engine
     Foruiman::Procfile.new[name] = command
     process = Foruiman::Process.new(command, cwd: root, env: env)
     state = State.new(name: name.freeze, process: process, port: @base_port + (processes.size * 100),
-                      status: :pending, generation: 0, restart_pending: false, reaped: true, group_gone: true)
+                      status: :pending, generation: 0, restart_pending: false, reaped: true, group_gone: true,
+                      input_buffer: +"".b)
     @names[name] = state
     processes << state
     state
@@ -97,6 +103,16 @@ class Foruiman::Engine
 
   def on_event(&listener)
     @listeners << listener
+    self
+  end
+
+  # Give every child a dedicated pseudo-terminal for stdin. The TUI remains the
+  # sole reader of the real terminal and explicitly forwards input to one child.
+  def manage_input!
+    raise Foruiman::Error, "cannot change input mode after startup" if @started
+
+    require "pty"
+    @managed_input = true
     self
   end
 
@@ -145,6 +161,33 @@ class Foruiman::Engine
     terminate(entry)
   end
 
+  def write_input(name, bytes)
+    entry = state(name)
+    return false unless entry.status == :running && entry.input && !entry.input.closed?
+    return false if entry.input_buffer.bytesize + bytes.bytesize > INPUT_BUDGET
+
+    entry.input_buffer << bytes.b
+    flush_input(entry)
+  rescue IOError, SystemCallError
+    false
+  end
+
+  def interrupt_process(name)
+    entry = state(name)
+    return unless entry.pgid
+
+    signal_group(entry, :INT)
+    self
+  end
+
+  def resize_inputs(rows, columns)
+    processes.each do |entry|
+      entry.input&.winsize = [rows, columns]
+    rescue IOError, SystemCallError
+      nil
+    end
+  end
+
   def shutdown(explicit: true)
     @explicit_shutdown ||= explicit
     return if @shutdown
@@ -189,9 +232,11 @@ class Foruiman::Engine
     shutdown if @signal_requested
     reap_children
     advance_groups
-    ready = IO.select([@self_reader, *@readers.keys], nil, nil, timeout)&.first || []
+    writable = processes.filter_map { |entry| entry.input unless entry.input_buffer.empty? }
+    ready, writable = IO.select([@self_reader, *@readers.keys], writable, nil, timeout) || [[], []]
     drain_signal_pipe if ready.delete(@self_reader)
     shutdown if @signal_requested
+    writable.each { |input| flush_input(@inputs.fetch(input)) if @inputs.key?(input) }
     read_output(ready)
     reap_children
     advance_groups
@@ -224,12 +269,15 @@ class Foruiman::Engine
 
     stdout_reader, stdout_writer = create_pipe
     stderr_reader, stderr_writer = create_pipe
+    input_master, input_slave = create_managed_input if @managed_input
     begin
       pid = entry.process.run(output: stdout_writer, error: stderr_writer,
+                              input: input_slave || @input,
                               env: { "PORT" => entry.port.to_s, "PS" => "#{entry.name}.1" })
     rescue SystemCallError => e
       stdout_reader.close
       stderr_reader.close
+      input_master&.close
       entry.status = :failed
       entry.restart_pending = false
       @failed = true
@@ -243,12 +291,19 @@ class Foruiman::Engine
     entry.restart_pending = false
     entry.deadline = nil
     entry.reaped = entry.group_gone = false
+    entry.input = input_master
+    entry.input_buffer.clear
     @running[pid] = entry
     [[stdout_reader, :stdout], [stderr_reader, :stderr]].each do |reader, stream|
       @readers[reader] = [entry, Foruiman::Output.new(logs, name: entry.name, stream: stream, pid: pid)]
     end
+    if input_master
+      @inputs[input_master] = entry
+      @readers[input_master] = [entry, Foruiman::Output.new(logs, name: entry.name, stream: :stdin, pid: pid)]
+    end
     lifecycle(entry, :started, "started with pid #{pid} (generation #{entry.generation})")
   ensure
+    input_slave&.close
     stdout_writer&.close
     stderr_writer&.close
     [stdout_reader, stderr_reader].compact.each do |reader|
@@ -278,8 +333,9 @@ class Foruiman::Engine
       entry.reaped = true
       entry.exit_status = result.last
       success = entry.exit_status.success?
-      @failed ||= !success && !%i[stopping restarting].include?(entry.status)
-      entry.status = success ? :exited : :failed unless %i[stopping restarting].include?(entry.status)
+      transitioning = %i[stopping restarting].include?(entry.status)
+      @failed ||= !success && !transitioning
+      entry.status = success ? :exited : :failed unless transitioning
       lifecycle(entry, :exited, termination_message_for(entry.exit_status))
       terminate(entry)
     end
@@ -299,6 +355,7 @@ class Foruiman::Engine
       next unless entry.reaped && entry.group_gone
       next if @readers.any? { |_reader, (owner, _output)| owner.equal?(entry) }
 
+      close_input(entry)
       entry.pgid = nil
       entry.deadline = nil
       entry.status = :stopped if entry.status == :stopping
@@ -328,16 +385,19 @@ class Foruiman::Engine
       break if budget <= 0
 
       entry, output = @readers.fetch(reader)
-      bytes = reader.read_nonblock(READ_CHUNK, exception: false)
-      if bytes.nil? || (bytes == :wait_readable && entry.group_gone)
-        @readers.delete(reader)
-        reader.close
-        output.feed("", eof: true)
-      elsif bytes != :wait_readable
-        budget -= bytes.bytesize
-        output.feed(bytes)
-        # Rotate serviced readers to the back for the next select.
-        @readers[reader] = @readers.delete(reader)
+      begin
+        bytes = reader.read_nonblock(READ_CHUNK, exception: false)
+        if bytes.nil? || (bytes == :wait_readable && entry.group_gone)
+          finish_reader(reader, entry, output)
+        elsif bytes != :wait_readable
+          budget -= bytes.bytesize
+          output.feed(bytes)
+          # Rotate serviced readers to the back for the next select.
+          @readers[reader] = @readers.delete(reader)
+        end
+      rescue Errno::EIO
+        # PTY masters report EIO when the child closes the slave side.
+        finish_reader(reader, entry, output)
       end
     end
     # A daemon that escaped the group may still hold a pipe open. Drain available
@@ -346,10 +406,48 @@ class Foruiman::Engine
       entry, output = @readers.fetch(reader)
       next unless entry.group_gone && !ready.include?(reader)
 
-      @readers.delete(reader)
-      reader.close
-      output.feed("", eof: true)
+      finish_reader(reader, entry, output)
     end
+  end
+
+  def create_managed_input
+    master, slave = PTY.open
+    [master, slave].each do |io|
+      io.binmode
+      io.close_on_exec = true
+    end
+    [master, slave]
+  end
+
+  def flush_input(entry)
+    return if entry.input_buffer.empty? || !entry.input
+
+    written = entry.input.write_nonblock(entry.input_buffer, exception: false)
+    entry.input_buffer.slice!(0, written) if written.is_a?(Integer)
+    true
+  rescue IOError, SystemCallError
+    reader = entry.input
+    finish_reader(reader, entry, @readers.fetch(reader).last) if reader && @readers.key?(reader)
+    false
+  end
+
+  def finish_reader(reader, entry, output)
+    @readers.delete(reader)
+    @inputs.delete(reader)
+    entry.input = nil if entry.input.equal?(reader)
+    reader.close unless reader.closed?
+    output.feed("", eof: true)
+  end
+
+  def close_input(entry)
+    input = entry.input
+    return unless input
+
+    @inputs.delete(input)
+    @readers.delete(input)
+    input.close unless input.closed?
+    entry.input = nil
+    entry.input_buffer.clear
   end
 
   def lifecycle(entry, type, message)

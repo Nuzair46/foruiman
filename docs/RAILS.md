@@ -46,7 +46,13 @@ exec foruiman start -f Procfile.dev "$@"
 
 Select the web tab and press `r` to restart Rails without interrupting the worker
 or asset watcher. On the `all` tab, `r` restarts all entries; `R` does so from any
-tab. The header shows the active Procfile. `q` or Ctrl-C stops all owned process
+tab. Default watch modes stay running because their stdin remains open. When Rails
+stops in Pry, Byebug or IRB, select `web` and press `i`. Edit commands in the input
+bar and press Enter to send them. Up/Down recall history, Left/Right move the
+cursor, and Ctrl-X returns to Foruiman. Ctrl-C interrupts the selected process;
+debugger tab completion is not forwarded. Press `s` to stop the selected entry
+and press it again to start it; `s` on `all` stops every entry. The header shows the
+active Procfile. `q` or Ctrl-C stops all owned process
 groups, including grandchildren, before returning to the shell.
 
 Redirect output with `foruiman start -f Procfile.dev > development.log` to use plain

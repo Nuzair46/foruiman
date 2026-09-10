@@ -22,13 +22,16 @@ module Foruiman::TUI
     end
 
     def run
+      @engine.manage_input!
       @terminal.session do
         @engine.run(keep_open: true) do
           rows, columns = @terminal.size
+          @engine.resize_inputs(rows, columns)
+          detach_unavailable_input
           input = @terminal.read
           @engine.shutdown if input.nil?
-          height = [Renderer.log_height(rows: rows, columns: columns), 1].max
-          @keyboard.feed(input.is_a?(String) ? input : "").each { |key| handle(key, height) }
+          height = [Renderer.log_height(rows: rows, columns: columns, input: state.input?), 1].max
+          read_keys(input.is_a?(String) ? input : "", height)
           state.feedback = nil if monotonic >= @feedback_until
           next if monotonic < @next_frame_at && @was_shutting_down == @engine.shutting_down?
 
@@ -66,7 +69,9 @@ module Foruiman::TUI
       when :toggle_follow then state.viewport.toggle(buffer, height)
       when :help then state.help = !state.help
       when :escape then state.help = false
-      when :restart, :stop then control(key)
+      when :restart then control(key)
+      when :stop then toggle_process
+      when :input then begin_input
       when :restart_all, :stop_all
         control_all(key == :restart_all ? :restart : :stop)
       when :quit then @engine.shutdown
@@ -74,6 +79,76 @@ module Foruiman::TUI
     end
 
     private
+
+    def read_keys(bytes, height)
+      @keyboard.feed("").each { |key| handle(key, height) } unless state.input?
+      bytes.bytes.each_with_index do |byte, index|
+        if state.input?
+          forward_input(bytes.byteslice(index..))
+          break
+        end
+        @keyboard.feed(byte.chr).each { |key| handle(key, height) }
+      end
+    end
+
+    def begin_input
+      if state.name == "all"
+        feedback("Select a process before entering input mode")
+      elsif @engine.state(state.name).status != :running
+        feedback("#{state.name} is not running")
+      else
+        state.help = false
+        state.viewport.follow
+        state.input_target = state.name
+        state.feedback = nil
+      end
+    end
+
+    def forward_input(bytes)
+      name = state.input_target
+      state.input_line.feed(bytes).each do |event|
+        case event
+        when :detach
+          state.input_target = nil
+          feedback("Returned from #{name}")
+        when :interrupt then @engine.interrupt_process(name)
+        when :eof then send_input(name, "\x04")
+        when Array then send_input(name, "#{event.last}\n")
+        end
+      end
+    end
+
+    def send_input(name, bytes)
+      return if @engine.write_input(name, bytes)
+
+      state.input_target = nil
+      feedback("Input unavailable for #{name}")
+    end
+
+    def detach_unavailable_input
+      return unless state.input?
+      return if @engine.state(state.input_target).status == :running
+
+      name = state.input_target
+      state.input_target = nil
+      feedback("Input closed for #{name}")
+    end
+
+    def toggle_process
+      if state.name == "all"
+        control_all(:stop)
+        return
+      end
+
+      entry = @engine.state(state.name)
+      if entry.pgid
+        @engine.stop(state.name)
+        feedback("Stopping #{state.name}")
+      else
+        @engine.start(state.name)
+        feedback("Starting #{state.name}")
+      end
+    end
 
     def control(action)
       if state.name == "all"
