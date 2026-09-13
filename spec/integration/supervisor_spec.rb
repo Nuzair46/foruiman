@@ -1,6 +1,53 @@
 # frozen_string_literal: true
 
 RSpec.describe Foruiman::Engine do
+  [0, 7].each do |code|
+    it "stops all groups on any exit and preserves exit code #{code}" do
+      pidfile = File.join(@directory, "policy.pids")
+      engine = build_engine({ "peer" => "exec #{fixture('tree', pidfile)}",
+                              "job" => fixture("exit_when_ready", pidfile, code.to_s) }, exit_on: :any)
+      engine.start_all
+      eventually(engine) { engine.finished? }
+      expect(engine.exit_code).to eq(code)
+      expect(engine.shutting_down?).to be(true)
+      expect(File.read(pidfile).split.map(&:to_i).select { |pid| alive?(pid) }).to be_empty
+    end
+  end
+
+  it "only shuts peers down on failure with the failure policy" do
+    engine = build_engine({ "job" => fixture("exit", "0"), "peer" => fixture("ticker") }, exit_on: :failure)
+    engine.start_all
+    eventually(engine) { engine.state("job").pgid.nil? }
+    expect(engine.shutting_down?).to be(false)
+    Process.kill(:KILL, engine.state("peer").pid)
+    eventually(engine) { engine.finished? }
+    expect(engine.exit_code).to eq(137)
+  end
+
+  it "does not trigger automatic shutdown for intentional stop or restart" do
+    engine = build_engine({ "web" => fixture("ticker"), "peer" => fixture("ticker") }, exit_on: :any)
+    engine.start_all
+    engine.restart("web")
+    eventually(engine) { engine.state("web").generation == 2 }
+    engine.stop("web")
+    eventually(engine) { engine.state("web").pgid.nil? }
+    expect(engine.shutting_down?).to be(false)
+    expect(alive?(engine.state("peer").pid)).to be(true)
+  end
+
+  it "cancels pending restarts when another process exits" do
+    marker = File.join(@directory, "ready")
+    engine = build_engine({ "web" => fixture("ignore_term"), "job" => fixture("exit_when_ready", marker, "9") },
+                          exit_on: :any)
+    engine.start_all
+    eventually(engine) { engine.logs["web"].any? { |record| record.text.start_with?("ready") } }
+    engine.restart("web")
+    write_file("ready", "go")
+    eventually(engine) { engine.finished? }
+    expect(engine.state("web").generation).to eq(1)
+    expect(engine.exit_code).to eq(9)
+  end
+
   it "keeps peers alive when one process fails and returns failure after all finish" do
     engine = build_engine({ "bad" => fixture("exit", "7"), "peer" => fixture("ticker") })
     engine.start_all

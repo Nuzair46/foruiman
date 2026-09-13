@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.3.0
+
+- Add `.foreman` YAML defaults with explicit CLI overrides and validated options.
+- Add `run` for one-off commands and named Procfile entries, preserving terminal
+  input, argument boundaries, signals, and exit status.
+- Match Foreman's explicit environment-file replacement, comma-separated loading,
+  environment `PORT` fallback, and Procfile/root path handling. See the migration
+  notes for changes from 0.2.
+- Add `-t` / `--timeout` and `--exit-on all|any|failure`. Automatic group shutdown
+  preserves the triggering exit code and cleans up descendants and pending restarts.
+
 ## 0.2.0
 
 - Keep child stdin open so default watcher modes continue running.

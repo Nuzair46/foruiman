@@ -21,13 +21,13 @@ RSpec.describe Foruiman::Env do
     )
   end
 
-  it "layers inherited, .env, and explicit values without mutating ENV or its input" do
+  it "loads explicit files instead of .env without mutating ENV or its input" do
     before = ENV.to_h
     inherited = { "A" => "inherited", "B" => "inherited", "C" => "inherited" }.freeze
     write_file(".env", "A=dotenv\nB=dotenv\n")
     explicit = write_file("custom.env", "A=explicit\n")
     result = described_class.load(root: @directory, file: explicit, inherited: inherited)
-    expect(result).to eq("A" => "explicit", "B" => "dotenv", "C" => "inherited")
+    expect(result).to eq("A" => "explicit", "B" => "inherited", "C" => "inherited")
     expect(ENV.to_h).to eq(before)
     expect(inherited["A"]).to eq("inherited")
   end

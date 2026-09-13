@@ -15,6 +15,10 @@ when "env"
 when "exit"
   puts "before exit"
   exit Integer(ARGV.fetch(0))
+when "exit_when_ready"
+  sleep 0.01 until File.exist?(ARGV.fetch(0))
+  puts "exit after peer ready"
+  exit Integer(ARGV.fetch(1))
 when "partial"
   print "partial"
   sleep 0.15

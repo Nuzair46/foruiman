@@ -18,12 +18,16 @@ class Foruiman::Engine
                      keyword_init: true)
   Event = Data.define(:type, :name, :pid, :status, :record, :message)
 
-  attr_reader :logs, :env, :processes, :root, :procfile_path
+  attr_reader :logs, :env, :processes, :root, :procfile_path, :term_timeout, :exit_on
 
   def initialize(procfile: nil, root: Dir.pwd, env: ENV.to_h, input: $stdin, port: 5000, log_lines: 10_000,
-                 term_timeout: TERM_TIMEOUT)
+                 term_timeout: TERM_TIMEOUT, exit_on: :all)
     raise Foruiman::Error, "port must be an integer in 1..65535" unless port.is_a?(Integer) && (1..65_535).cover?(port)
     raise Foruiman::Error, "log-lines must be a positive integer" unless log_lines.is_a?(Integer) && log_lines.positive?
+    unless term_timeout.is_a?(Numeric) && term_timeout.real? && term_timeout.finite? && term_timeout >= 0
+      raise Foruiman::Error, "timeout must be a finite nonnegative number"
+    end
+    raise Foruiman::Error, "exit-on must be all, any, or failure" unless %i[all any failure].include?(exit_on)
 
     @root = File.expand_path(root)
     raise Foruiman::Error, "working directory does not exist: #{@root}" unless File.directory?(@root)
@@ -34,6 +38,7 @@ class Foruiman::Engine
     @base_port = port
     @log_lines = log_lines
     @term_timeout = term_timeout
+    @exit_on = exit_on
     @processes = []
     @names = {}
     @running = {}
@@ -208,7 +213,9 @@ class Foruiman::Engine
   end
 
   def exit_code
-    @explicit_shutdown || !@failed ? 0 : 1
+    return 0 if @explicit_shutdown
+
+    @policy_exit_code || (@failed ? 1 : 0)
   end
 
   def run(keep_open: false)
@@ -282,6 +289,7 @@ class Foruiman::Engine
       entry.restart_pending = false
       @failed = true
       lifecycle(entry, :failed, "failed to start: #{e.message}")
+      apply_exit_policy(1)
       return
     end
     entry.pid = entry.pgid = pid
@@ -337,8 +345,16 @@ class Foruiman::Engine
       @failed ||= !success && !transitioning
       entry.status = success ? :exited : :failed unless transitioning
       lifecycle(entry, :exited, termination_message_for(entry.exit_status))
+      apply_exit_policy(entry.exit_status.exitstatus || (128 + entry.exit_status.termsig)) unless transitioning
       terminate(entry)
     end
+  end
+
+  def apply_exit_policy(code)
+    return if @shutdown || exit_on == :all || (exit_on == :failure && code.zero?)
+
+    @policy_exit_code = code
+    shutdown(explicit: false)
   end
 
   def advance_groups

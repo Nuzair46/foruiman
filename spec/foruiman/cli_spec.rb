@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 RSpec.describe "CLI" do
-  it "prints its version and limits commands to the MVP" do
+  it "prints its version and excludes unsupported commands" do
     output, error, status = cli("--version")
     expect(output).to eq("#{Foruiman::VERSION}\n")
     expect(error).to be_empty
     expect(status).to be_success
-    %w[export run tree].each do |command|
+    %w[export tree].each do |command|
       _output, _error, status = cli(command)
       expect(status).not_to be_success
     end
@@ -54,15 +54,16 @@ RSpec.describe "CLI" do
     expect(error).to include("Unknown switches")
   end
 
-  it "layers environments with generated variables last and defaults to invocation cwd" do
+  it "replaces .env with explicit files and infers the root from the Procfile" do
     write_file("nested/Procfile", "web: #{fixture('env', 'FOO', 'BAR', 'PORT', 'PS')}\n")
     write_file(".env", "FOO=dotenv\nBAR=dotenv\nPORT=9000\nPS=wrong\n")
     write_file("custom.env", "FOO=explicit\n")
-    output, error, status = cli("-f", "nested/Procfile", "-e", "custom.env", env: { "FOO" => "inherited" })
+    output, error, status = cli("-f", "nested/Procfile", "-e", "custom.env",
+                                env: { "FOO" => "inherited", "BAR" => "inherited", "PORT" => "7000" })
     expect(status).to be_success
     expect(error).to be_empty
-    expect(output).to include('"FOO":"explicit"', '"BAR":"dotenv"', '"PORT":"5000"', '"PS":"web.1"')
-    expect(output).to include(%("cwd":"#{@directory}"))
+    expect(output).to include('"FOO":"explicit"', '"BAR":"inherited"', '"PORT":"7000"', '"PS":"web.1"')
+    expect(output).to include(%("cwd":"#{@directory}/nested"))
     expect(output).not_to include("\e[")
   end
 

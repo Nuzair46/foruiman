@@ -256,7 +256,8 @@ module Foruiman::TUI
 
       quit = @theme.paint(" q ", :accent, bold: true) + @theme.paint(" × quit ", :muted)
       left = if engine.shutting_down?
-               @theme.paint(" ◌ Stopping process groups · TERM → KILL after 5s", :amber)
+               seconds = format("%g", engine.term_timeout)
+               @theme.paint(" ◌ Stopping process groups · TERM → KILL after #{seconds}s", :amber)
              elsif state.feedback
                @theme.paint(" #{state.feedback}", :amber)
              elsif state.help
