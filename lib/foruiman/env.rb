@@ -28,8 +28,11 @@ class Foruiman::Env
   def self.load(root: Dir.pwd, file: nil, dotenv: true, inherited: ENV.to_h)
     env = inherited.dup
     default = File.join(root, ".env")
-    env.merge!(new(default).to_h) if dotenv && File.file?(default)
-    env.merge!(new(file).to_h) if file
+    if file
+      Array(file).each { |filename| env.merge!(new(filename).to_h) }
+    elsif dotenv && File.file?(default)
+      env.merge!(new(default).to_h)
+    end
     env.transform_values { |value| value.dup.freeze }.freeze
   end
 end

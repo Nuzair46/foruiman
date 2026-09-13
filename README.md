@@ -38,6 +38,8 @@ Useful commands:
 foruiman start -f Procfile.dev  # use another Procfile
 foruiman start web              # run one process
 foruiman start --no-tui         # stream plain logs
+foruiman run bin/rails console  # one-off command with the app environment
+foruiman start --exit-on any    # stop the group when a process exits
 foruiman check                  # validate without starting
 foruiman --version
 ```
@@ -59,12 +61,18 @@ process tab, `s` starts it again.
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `-f`, `--procfile FILE` | `Procfile` | Procfile to run |
-| `-d`, `--root DIR` | Current directory | Working directory |
-| `-e`, `--env FILE` | None | Additional environment file |
+| `-d`, `--root DIR` | Procfile directory | Working directory |
+| `-e`, `--env FILES` | `.env` | Comma-separated files, loaded in order instead of `.env` |
 | `--no-dotenv` | `.env` enabled | Skip `.env` |
-| `-p`, `--port PORT` | `5000` | Base port; entries increment by 100 |
+| `-p`, `--port PORT` | Environment `PORT`, then `5000` | Base port; entries increment by 100 |
+| `-t`, `--timeout SECONDS` | `5` | Grace period before forced shutdown |
+| `--exit-on all\|any\|failure` | `all` | Keep peers running, stop on any exit, or stop on failure |
 | `--log-lines N` | `10000` | Retained records per process and in `all` |
 | `--no-tui` | TUI when interactive | Force plain output |
+
+Set defaults in a `.foreman` YAML file in the invocation directory; CLI flags
+override them. See [compatibility and migration notes](docs/COMPATIBILITY.md) for
+path rules, supported settings, and changes from 0.2.
 
 ## Keyboard
 

@@ -1,6 +1,31 @@
 # frozen_string_literal: true
 
 RSpec.describe "Plain mode" do
+  it "uses the CLI timeout to kill an uncooperative peer after a policy-triggering exit" do
+    pidfile = File.join(@directory, "policy.pid")
+    write_file("Procfile", "peer: exec #{fixture('ignore_term', pidfile)}\n" \
+                           "job: #{fixture('exit_when_ready', pidfile, '7')}\n")
+    input, output, errors, waiter = Open3.popen3(RbConfig.ruby, "-I", File.expand_path("../../lib", __dir__),
+                                                 File.expand_path("../../bin/foruiman", __dir__), "start",
+                                                 "--exit-on", "any", "-t", "0.05", chdir: @directory)
+    input.close
+    eventually(timeout: 3) { !waiter.alive? }
+    expect(waiter.value.exitstatus).to eq(7)
+    expect(output.read).to include("sent SIGKILL after TERM timeout")
+    expect(errors.read).to be_empty
+    expect(alive?(File.read(pidfile).to_i)).to be(false)
+  ensure
+    if waiter&.alive?
+      Process.kill(:KILL, waiter.pid)
+      waiter.join
+    end
+    if pidfile && File.exist?(pidfile)
+      child = File.read(pidfile).to_i
+      Process.kill(:KILL, -child) if child.positive? && alive?(child)
+    end
+    [input, output, errors].compact.each { |io| io.close unless io.closed? }
+  end
+
   it "waits for newline or EOF to print partial output" do
     write_file("Procfile", "web: #{fixture('partial')}\n")
     output, error, status = cli("start", "--no-tui")

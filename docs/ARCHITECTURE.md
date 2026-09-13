@@ -4,6 +4,9 @@
 `Env` retains its quoting rules and adds a non-mutating precedence merge. `Process`
 wraps `/bin/sh -c` with a new process group, two output streams, and configurable stdin.
 `CLI < Thor` validates the full configuration before starting the engine.
+`Configuration` safely loads `.foreman` defaults, merges explicit CLI values,
+resolves Foreman-compatible paths and environments, and validates numeric options.
+`run` uses `exec` for one-off commands with direct terminal IO and exact exit status.
 
 `Engine` owns registration, PID/group tracking, nonblocking pipes, child reaping,
 and lifecycle transitions. A single caller thread drives all mutations. Signal
@@ -47,8 +50,10 @@ Call engine methods and event listeners on the driving thread; this is not a
 cross-thread messaging API. `run` handles INT/TERM/HUP and restores existing
 handlers. An embedding loop that drives `tick` directly owns its signal handling.
 `close` disconnects observers so a failed renderer/output consumer cannot prevent
-process cleanup. `term_timeout:` exists for deterministic embedded tests; CLI
-shutdown always uses five seconds. `state(name)` exposes lifecycle state for
+process cleanup. `term_timeout:` controls the shutdown grace period (CLI `-t`,
+default five seconds). `exit_on: :all` retains independent processes; `:any` or
+`:failure` requests group shutdown after a qualifying natural exit and preserves
+its exit code. Intentional stops/restarts do not trigger the policy. `state(name)` exposes lifecycle state for
 rendering; callers should not mutate it.
 
 Children inherit the configured input stream in plain and embedded use. Before

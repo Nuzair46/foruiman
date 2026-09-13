@@ -22,5 +22,13 @@ Dir.mktmpdir("foruiman-gem-smoke-") do |directory|
   stdout, stderr, status = Open3.capture3(env, executable, "start", "--no-tui", chdir: directory)
   abort "installed gem failed: #{stdout}\n#{stderr}" unless status.success? && stdout.include?("packaged gem works")
 
+  File.write(File.join(directory, "custom.env"), "GREETING=packaged environment\n")
+  File.write(File.join(directory, ".foreman"), "env: custom.env\n")
+  stdout, stderr, status = Open3.capture3(env, executable, "run", RbConfig.ruby, "-e",
+                                          'puts ENV.fetch("GREETING"); exit 23', chdir: directory)
+  unless status.exitstatus == 23 && stdout == "packaged environment\n" && stderr.empty?
+    abort "installed run command failed: #{stdout}\n#{stderr}"
+  end
+
   puts "Installed gem smoke test passed"
 end

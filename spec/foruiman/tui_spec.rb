@@ -127,6 +127,7 @@ RSpec.describe Foruiman::TUI::Renderer do
     expect(renderer.render(state, engine, rows: 1, columns: 1)).to include("\e[H")
     engine.shutdown
     expect(renderer.render(state, engine, rows: 10, columns: 80)).to include("Stopping process groups")
+    expect(renderer.render(state, engine, rows: 10, columns: 80)).to include("after 0.15s")
   end
 
   it "resets styles on every row and truncates without wrapping" do
