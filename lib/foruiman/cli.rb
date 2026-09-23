@@ -4,31 +4,38 @@ require "thor"
 require "foruiman"
 require_relative "plain"
 require_relative "diagnostics"
+require_relative "configuration"
 
-# Foreman's Thor command structure, reduced to the MVP surface.
+# Foreman's Thor command structure with an interactive supervisor.
 class Foruiman::CLI < Thor
   map ["-v", "--version"] => :version
   default_task :start
   check_unknown_options!
   remove_command :tree
 
-  class_option :procfile, type: :string, aliases: "-f", default: "Procfile", desc: "Procfile to read"
-  class_option :root, type: :string, aliases: "-d", desc: "Working directory (default: invocation directory)"
-  class_option :env, type: :string, aliases: "-e", desc: "Environment file layered after .env"
-  class_option :dotenv, type: :boolean, default: true, desc: "Load optional .env from working directory"
-  class_option :port, type: :string, aliases: "-p", default: "5000", desc: "Base port (increments by 100)"
-  class_option :log_lines, type: :string, default: "10000", desc: "Maximum records per process and in all"
+  class_option :procfile, type: :string, aliases: "-f", desc: "Procfile to read (default: Procfile)"
+  class_option :root, type: :string, aliases: "-d", desc: "Working directory (default: Procfile directory)"
+  class_option :env, type: :string, aliases: "-e", desc: "Comma-separated environment files instead of .env"
+  class_option :dotenv, type: :boolean, desc: "Load default .env when -e is absent (default: true)"
+  class_option :port, type: :string, aliases: "-p", desc: "Base port (default: PORT or 5000)"
+  class_option :log_lines, type: :string, desc: "Maximum records per process and in all (default: 10000)"
+  class_option :timeout, type: :string, aliases: "-t", desc: "Seconds before escalating TERM to KILL (default: 5)"
+  class_option :exit_on, type: :string, desc: "Shutdown policy: all, any, failure (default: all)"
+
+  def self.is_thor_reserved_word?(word, type) # rubocop:disable Naming/PredicatePrefix -- Thor's extension API
+    word == "run" ? false : super
+  end
 
   def self.exit_on_failure?
     true
   end
 
   desc "start [PROCESS]", "Run the Procfile with process tabs, or stream logs without a TTY"
-  method_option :tui, type: :boolean, default: true, desc: "Use the terminal interface when stdin and stdout are TTYs"
+  method_option :tui, type: :boolean, desc: "Use the terminal interface when stdin and stdout are TTYs (default: true)"
   def start(process = nil)
     engine = build_engine
     engine.select(process) if process
-    interactive = options[:tui] && $stdin.tty? && $stdout.tty?
+    interactive = configuration.tui? && $stdin.tty? && $stdout.tty?
     diagnostics = Foruiman::Diagnostics.new(interactive: interactive)
     code = if interactive
              require_relative "tui/application"
@@ -48,6 +55,24 @@ class Foruiman::CLI < Thor
     diagnostics&.close
   end
 
+  desc "run COMMAND [ARGS...]", "Run a command or Procfile entry with the application's environment"
+  stop_on_unknown_option! :run
+  def run(*args)
+    raise Foruiman::Error, "run requires a command" if args.empty?
+
+    config = configuration
+    env = config.environment
+    command = Foruiman::Procfile.new(config.procfile)[args.first] if args.size == 1 && File.file?(config.procfile)
+    if command
+      exec(env, "/bin/sh", "-c", command, chdir: config.root, unsetenv_others: true)
+    else
+      # Preserve argv, terminal input, signals and the command's exact exit code.
+      exec(env, [args.first, args.first], *args.drop(1), chdir: config.root, unsetenv_others: true)
+    end
+  rescue Foruiman::Error, SystemCallError => e
+    raise Thor::Error, e.message
+  end
+
   desc "check", "Validate the Procfile, environment files, ports, and log capacity without starting processes"
   def check
     engine = build_engine
@@ -65,19 +90,15 @@ class Foruiman::CLI < Thor
 
   private
 
-  def integer_option(name)
-    text = options.fetch(name).to_s
-    raise Foruiman::Error, "#{name.to_s.tr('_', '-')} must be a positive integer" unless text.match?(/\A[0-9]+\z/)
-
-    text.to_i
+  def configuration
+    @configuration ||= Foruiman::Configuration.new(options)
   end
 
   def build_engine
-    root = File.expand_path(options[:root] || Dir.pwd)
-    procfile = File.expand_path(options[:procfile], root)
-    file = File.expand_path(options[:env], root) if options[:env]
-    env = Foruiman::Env.load(root: root, file: file, dotenv: options[:dotenv])
-    Foruiman::Engine.new(procfile: procfile, root: root, env: env,
-                         port: integer_option(:port), log_lines: integer_option(:log_lines))
+    config = configuration
+    env = config.environment
+    Foruiman::Engine.new(procfile: config.procfile, root: config.root, env: env,
+                         port: config.port(env), log_lines: config.log_lines,
+                         term_timeout: config.timeout, exit_on: config.exit_on)
   end
 end

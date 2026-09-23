@@ -87,12 +87,47 @@ RSpec.describe "PTY and signal integration" do
 
   it "shows the selected Procfile from a custom working directory in the title" do
     write_file("app/config/Procfile.dev", "web: #{fixture('partial')}\n")
-    status = with_terminal(*command("-d", "app", "-f", "config/Procfile.dev")) do |master, _slave, _pid, output|
+    status = with_terminal(*command("-d", "app", "-f", "app/config/Procfile.dev")) do |master, _slave, _pid, output|
       read_until(master, output, "config/Procfile.dev")
       expect(output).to include("/ app")
       master.write("q")
     end
     expect(status).to be_success
+  end
+
+  it "closes the TUI after an automatic policy shutdown and restores the terminal" do
+    write_file("Procfile", "job: #{fixture('partial')}\n")
+    status = with_terminal(*command("--exit-on", "any", "-t", "0.1")) do |master, _slave, _pid, output|
+      read_until(master, output, "partial")
+    end
+    expect(status).to be_success
+  end
+
+  it "runs one-off commands with the original terminal and delivers signals directly" do
+    pidfile = File.join(@directory, "run.pids")
+    master, slave = PTY.open
+    script = 'File.write(ARGV[0], Process.pid); puts "tty=" + STDIN.tty?.to_s; STDOUT.flush; sleep 30'
+    pid = Process.spawn(*command("run", RbConfig.ruby, "-e", script, pidfile),
+                        in: slave, out: slave, err: slave, pgroup: true, chdir: @directory)
+    output = +""
+    read_until(master, output, "tty=true")
+    expect(File.read(pidfile).to_i).to eq(pid)
+    Process.kill(:TERM, pid)
+    eventually { !alive?(pid) }
+    _pid, status = Process.waitpid2(pid)
+    expect(status.termsig).to eq(Signal.list.fetch("TERM"))
+    expect(output).not_to include(Foruiman::TUI::Terminal::ENTER)
+  ensure
+    if pid
+      Process.kill(:KILL, -pid) if alive?(pid)
+      begin
+        Process.waitpid(pid)
+      rescue Errno::ECHILD
+        nil
+      end
+    end
+    master&.close
+    slave&.close
   end
 
   it "keeps watcher stdin open and forwards interactive debugger input" do

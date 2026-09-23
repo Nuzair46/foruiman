@@ -35,7 +35,18 @@ foruiman start -f Procfile.dev -p 3000
 
 The second example assigns 3000 to `web`, 3100 to `worker`, and 3200 to `css`.
 Only programs that consume their generated `PORT` use those values. The base port
-is set with `-p`; a `PORT` assignment in `.env` does not set it.
+comes from `-p` or `.foreman`, then `PORT` in the loaded environment, then 5000.
+
+Run a Rails command using the same environment without starting the Procfile:
+
+```sh
+foruiman run bin/rails console
+foruiman run -e .env,.env.local bin/rails db:migrate
+```
+
+Explicit `-e` files replace default `.env` loading, so include `.env` in the list
+when layering local overrides. For Foreman-style group shutdown and a longer grace
+period, use `foruiman start -f Procfile.dev --exit-on any -t 10`.
 
 An optional `bin/dev`:
 
