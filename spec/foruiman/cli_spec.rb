@@ -54,6 +54,41 @@ RSpec.describe "CLI" do
     expect(error).to include("Unknown switches")
   end
 
+  it "validates only selected ports without renumbering original entries" do
+    write_file("Procfile", "web: #{fixture('env', 'PORT')}\n" \
+                           "worker: #{fixture('env', 'PORT')}\nextra: echo unused\n")
+    output, error, status = cli("start", "worker", "-p", "65400")
+    expect(status).to be_success
+    expect(error).to be_empty
+    expect(output).to include('"PORT":"65500"')
+    expect(output).not_to include("web [", "extra [")
+
+    %w[start check].each do |command|
+      output, error, status = cli(command, "-p", "65400")
+      expect(status.exitstatus).to eq(1)
+      expect(error).to include("65600")
+      expect(output).to be_empty
+    end
+
+    output, error, status = cli("start", "extra", "-p", "65400")
+    expect(status.exitstatus).to eq(1)
+    expect(error).to include("65600")
+    expect(output).to be_empty
+  end
+
+  it "starts and runs a Procfile process named all" do
+    write_file("Procfile", "all: echo own-output\npeer: echo peer-output\n")
+    output, error, status = cli("start", "all")
+    expect(status).to be_success
+    expect(error).to be_empty
+    expect(output).to include("own-output")
+    expect(output).not_to include("peer-output")
+    output, error, status = cli("run", "all")
+    expect(status).to be_success
+    expect(error).to be_empty
+    expect(output).to eq("own-output\n")
+  end
+
   it "replaces .env with explicit files and infers the root from the Procfile" do
     write_file("nested/Procfile", "web: #{fixture('env', 'FOO', 'BAR', 'PORT', 'PS')}\n")
     write_file(".env", "FOO=dotenv\nBAR=dotenv\nPORT=9000\nPS=wrong\n")

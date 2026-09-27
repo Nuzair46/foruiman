@@ -9,7 +9,8 @@ The missing RFC was requested during implementation; these choices fill the gaps
 - Foreman's `-f`, `-d`, `-e`, `-p` aliases; `--log-lines`, `--no-tui`, `--no-dotenv`.
 - Default capacity 10,000 records per ring.
 - Process tabs in entry order, then `all`; select `all` initially.
-- `all` reserved as a process name to avoid an ambiguous aggregate tab.
+- The aggregate tab has a separate internal identity, so `all` is also a valid
+  process name. This replaces the original reserved-name assumption.
 - Vim-style and arrow navigation, digits, `f`, Space, `r`/`R`, `s`/`S`, `?`, `q`.
 - Generated `PS=name.1`, as in Foreman; no other generated variables.
 - Relative file paths resolved against invocation directory or explicit `-d`.

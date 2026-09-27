@@ -9,7 +9,7 @@ module Foruiman::TUI
     attr_accessor :help, :feedback, :input_target
 
     def initialize(names)
-      @tabs = [*names, "all"].freeze
+      @tabs = [*names, :all].freeze
       @selected = tabs.size - 1
       @viewports = tabs.to_h { |name| [name, Viewport.new] }
       @help = false
@@ -20,6 +20,10 @@ module Foruiman::TUI
 
     def name
       tabs[selected]
+    end
+
+    def aggregate?
+      name == :all
     end
 
     def viewport

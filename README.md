@@ -56,6 +56,13 @@ interrupts the selected process. Debugger tab completion is not forwarded.
 Press `s` to stop the selected process, or all processes from `all`; on a stopped
 process tab, `s` starts it again.
 
+The aggregate `all` tab uses shortcut `0`. A process named `all` has its own
+numbered tab and independent controls. USR1 and USR2 sent to Foruiman are forwarded
+to every child process group for application-defined handling.
+
+In plain mode, children inherit stdin, including terminal input. Multiple children
+reading stdin share that stream; use TUI input controls to target one process.
+
 ## Options
 
 | Option | Default | Purpose |

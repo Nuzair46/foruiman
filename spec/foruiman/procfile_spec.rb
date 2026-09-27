@@ -42,7 +42,14 @@ RSpec.describe Foruiman::Procfile do
     expect { described_class.new(file) }.to raise_error(described_class::EmptyFileError, /no processes/)
   end
 
-  ["web echo hi", "bad.name: echo hi", "web:  ", "all: echo hi", "web: echo\0"].each do |line|
+  it "accepts a process named all" do
+    file = write_file("Procfile", "all: echo hi\n")
+    expect(described_class.new(file)["all"]).to eq("echo hi")
+    procfile["all"] = "echo replacement"
+    expect(procfile["all"]).to eq("echo replacement")
+  end
+
+  ["web echo hi", "bad.name: echo hi", "web:  ", "web: echo\0"].each do |line|
     it "rejects #{line.inspect} with a line number" do
       file = write_file("Procfile", "# line 1\n#{line}\n")
       expect { described_class.new(file) }.to raise_error(described_class::ParseError, /Procfile:2:/)

@@ -60,10 +60,138 @@ RSpec.describe "PTY and signal integration" do
   end
 
   def read_until(master, output, text, timeout: 5)
+    return if output.include?(text)
+
     eventually(timeout: timeout) do
       bytes = master.read_nonblock(65_536, exception: false)
       output << bytes if bytes.is_a?(String)
       output.include?(text)
+    end
+  end
+
+  def with_controlling_terminal(*args)
+    reader, writer, pid = PTY.spawn(*command(*args), chdir: @directory)
+    reader.winsize = [24, 160]
+    output = +""
+    yield reader, writer, pid, output
+    status = nil
+    eventually do
+      begin
+        bytes = reader.read_nonblock(65_536, exception: false)
+        output << bytes if bytes.is_a?(String)
+      rescue Errno::EIO
+        nil
+      end
+      status ||= Process.waitpid2(pid, Process::WNOHANG)&.last
+    end
+    status
+  ensure
+    if pid && !status
+      begin
+        Process.kill(:KILL, -pid)
+        Process.waitpid(pid)
+      rescue Errno::ESRCH, Errno::ECHILD
+        nil
+      end
+    end
+    Dir.glob(File.join(@directory, "*.pids")).each do |filename|
+      File.read(filename).split.map(&:to_i).each do |child|
+        Process.kill(:KILL, -Process.getpgid(child)) if alive?(child)
+      rescue Errno::ESRCH
+        nil
+      end
+    end
+    [reader, writer].compact.each { |io| io.close unless io.closed? }
+  end
+
+  it "reads lines and raw keystrokes from a real controlling terminal in plain mode" do
+    pidfile = File.join(@directory, "input.pids")
+    write_file("Procfile", "web: #{fixture('terminal_input', pidfile)}\n")
+    status = with_controlling_terminal("start", "--no-tui") do |reader, writer, _pid, output|
+      read_until(reader, output, "terminal ready tty=true")
+      writer.write("hello\n")
+      read_until(reader, output, 'received "hello"')
+      read_until(reader, output, "raw ready")
+      writer.write("x")
+      read_until(reader, output, 'raw byte "x"')
+      read_until(reader, output, "input complete")
+    end
+    expect(status).to be_success
+  end
+
+  it "delivers terminal EOF to plain children" do
+    pidfile = File.join(@directory, "eof.pids")
+    script = 'STDOUT.sync = true; File.write(ARGV[0], Process.pid); puts "read ready"; puts "eof:" + STDIN.read'
+    write_file("Procfile", "web: #{[RbConfig.ruby, '-e', script, pidfile].shelljoin}\n")
+    status = with_controlling_terminal("start", "--no-tui") do |reader, writer, _pid, output|
+      read_until(reader, output, "read ready")
+      writer.write("hello\n\x04")
+      read_until(reader, output, "eof:hello")
+    end
+    expect(status).to be_success
+  end
+
+  it "cleans detached child sessions and descendants on plain terminal Ctrl-C" do
+    pidfile = File.join(@directory, "plain-tree.pids")
+    write_file("Procfile", "web: exec #{fixture('tree', pidfile)}\n")
+    members = []
+    status = with_controlling_terminal("start", "--no-tui", "-t", "0.1") do |reader, writer, _pid, output|
+      read_until(reader, output, "tree ready")
+      members = File.read(pidfile).split.map(&:to_i)
+      writer.write("\x03")
+    end
+    expect(status).to be_success
+    expect(members.select { |member| alive?(member) }).to be_empty
+  end
+
+  [[], ["--no-tui"]].each do |options|
+    it "forwards USR signals to child groups without closing #{options.empty? ? 'the TUI' : 'plain mode'}" do
+      pidfiles = %w[web peer].map { |name| File.join(@directory, "#{name}.pids") }
+      write_file("Procfile", "web: #{fixture('signals', pidfiles[0], 'tree')}\n" \
+                             "peer: exec #{fixture('signals', pidfiles[1])}\n")
+      members = []
+      status = with_controlling_terminal("start", *options, "-t", "0.1") do |reader, writer, pid, output|
+        eventually { pidfiles.all? { |file| File.file?(file) && !File.empty?(file) } }
+        members = pidfiles.flat_map { |file| File.read(file).split.map(&:to_i) }
+        %w[USR1 USR2].each do |signal|
+          Process.kill(signal, pid)
+          members.each { |child| read_until(reader, output, "received #{signal} #{child}") }
+          expect(members.all? { |child| alive?(child) }).to be(true)
+          expect(alive?(pid)).to be(true)
+        end
+        if options.empty?
+          writer.write("?")
+          read_until(reader, output, "close help")
+          writer.write("q")
+        else
+          Process.kill(:TERM, pid)
+        end
+      end
+      expect(status).to be_success
+      expect(members.select { |member| alive?(member) }).to be_empty
+    end
+  end
+
+  %w[USR1 USR2].each do |signal|
+    it "preserves default #{signal} termination for children without a handler" do
+      web_pidfile = File.join(@directory, "web.pids")
+      peer_pidfile = File.join(@directory, "peer.pids")
+      write_file("Procfile", "web: #{fixture('ticker', web_pidfile)}\n" \
+                             "peer: #{fixture('signals', peer_pidfile)}\n")
+      status = with_controlling_terminal("start", "--no-tui", "-t", "0.1") do |reader, _writer, pid, output|
+        read_until(reader, output, "signals ready")
+        read_until(reader, output, "tick")
+        web = File.read(web_pidfile).to_i
+        peer = File.read(peer_pidfile).to_i
+        Process.kill(signal, pid)
+        read_until(reader, output, "received #{signal} #{peer}")
+        eventually { !alive?(web) }
+        read_until(reader, output, "exited with code #{128 + Signal.list.fetch(signal)}")
+        expect(alive?(peer)).to be(true)
+        expect(alive?(pid)).to be(true)
+        Process.kill(:TERM, pid)
+      end
+      expect(status).to be_success
     end
   end
 

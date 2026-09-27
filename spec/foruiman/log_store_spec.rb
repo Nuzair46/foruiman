@@ -30,6 +30,15 @@ RSpec.describe Foruiman::LogStore do
     expect(partial.text).to eq("par")
   end
 
+  it "keeps a process named all separate from the aggregate log" do
+    logs = described_class.new(%w[all worker], capacity: 3)
+    own = write(logs, "all", "own output")
+    peer = write(logs, "worker", "peer output")
+    expect(logs["all"].to_a).to eq([own])
+    expect(logs[:all]).to equal(logs.all)
+    expect(logs.all.to_a).to eq([own, peer])
+  end
+
   [0, -1, 1.5, "10"].each do |capacity|
     it "rejects capacity #{capacity.inspect}" do
       expect { described_class.new(["web"], capacity: capacity) }.to raise_error(Foruiman::Error)

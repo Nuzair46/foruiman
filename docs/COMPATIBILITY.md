@@ -3,23 +3,34 @@
 Foruiman supports common Foreman development workflows. It is not a drop-in
 replacement for every Foreman feature.
 
+See the [2026-09-27 compatibility audit](FOREMAN_AUDIT.md) for issue-backed gaps,
+direct comparisons with Foreman 0.90.0, and the implementation scope for compatible
+development workflows in this TUI. Exporters, the Foreman Ruby API, older
+runtimes, and exact legacy presentation are excluded from that work. Its
+modernization assessment recommends retaining consistent app-root execution,
+strict configuration/env-file validation, and meaningful TUI options. The four
+selected improvements are implemented in the unreleased changes below; the audit
+preserves the original findings separately from their implementation status.
+
 | Area | Foruiman behavior |
 | --- | --- |
 | Identity | `foruiman` gem/executable, `Foruiman` namespace, version 0.3.0 |
 | Runtime | Ruby 3.2+, POSIX process groups; Linux CI |
 | CLI | Thor-based `start [PROCESS]`, `run COMMAND [ARGS...]`, `check`, `version`, and `help` |
 | Excluded features | No export, scaling/formation, forced color, or timestamp toggle |
-| Procfile validation | Reject malformed lines, duplicates, empty commands, and reserved `all`; report line numbers |
+| Procfile validation | Reject malformed lines, duplicates, and empty commands; report line numbers. A process named `all` is valid |
 | Working directory | Procfile directory unless `-d`; explicit `-f` and `-e` paths resolve from invocation |
 | Environment | Explicit `-e file1,file2` replaces default `.env` loading; later files win; parent `ENV` stays untouched |
-| Ports | `-p` or `.foreman` port, then loaded `PORT`, then 5000; plus 100 per original entry |
+| Ports | `-p` or `.foreman` port, then loaded `PORT`, then 5000; plus 100 per original entry. `start PROCESS` validates only that allocation; `check` validates all |
 | Expansion | `/bin/sh -c` performs shell expansion; no Ruby string substitution |
 | Instances | Exactly one instance per entry; `PS=name.1` |
 | Failures | Independent by default; `--exit-on any` stops on any natural exit, `failure` only on an unsuccessful exit |
 | Restart | Stop only the affected group, wait for descendants and output, then replace |
 | Shutdown | TERM, configurable `-t` grace (default five seconds), KILL; track groups after leader exit; restore prior signal handlers |
+| Signals | USR1/USR2 reach every owned process group; applications choose how to handle them. INT/TERM/HUP request orderly shutdown |
 | Output | Separate stdout/stderr metadata; bounded logs and live partial records |
-| Terminal | Tabs, independent scroll/follow, restart, start/stop, and selected-process input controls |
+| Terminal | Tabs, independent scroll/follow, restart, start/stop, and selected-process input controls; aggregate `0: all` is separate from a process named `all` |
+| Plain stdin | Inherited stdin supports pipes, terminal line input, raw reads, and EOF; concurrent readers share the stream |
 | Plain exit | Default status 0/1; automatic group shutdown preserves its triggering exit code (128 + signal for a signal exit); explicit orderly shutdown returns 0 |
 | Interactive exit | Remain open after all processes exit by default; automatic shutdown policies close the TUI after cleanup |
 
@@ -67,8 +78,8 @@ does not generate per-process `PORT` or `PS` values or open the TUI.
 - A `.foreman` file now supplies defaults. Remove unsupported keys before using it.
 
 Use `--exit-on any` for Foreman's stop-on-first-exit behavior. Intentional TUI
-stops and restarts do not trigger that policy. Exact Foreman log formatting,
-USR1/USR2 forwarding, and its Ruby embedding API remain outside compatibility.
+stops and restarts do not trigger that policy. Exact Foreman log formatting and
+its Ruby embedding API remain outside compatibility.
 
 Full-screen child terminal applications and background daemonization are outside
 this release. Remote process control, persistence across Foruiman sessions,

@@ -7,7 +7,8 @@ require_relative "output"
 # Derived from Foreman's registration, process lookup, pipes and self-pipe signal
 # handling. All process state and output now belong to the caller's event loop.
 class Foruiman::Engine
-  HANDLED_SIGNALS = %i[INT TERM HUP].freeze
+  FORWARDED_SIGNALS = %i[USR1 USR2].freeze
+  HANDLED_SIGNALS = %i[INT TERM HUP USR1 USR2].freeze
   TERM_TIMEOUT = 5.0
   READ_CHUNK = 4096
   READ_BUDGET = 64 * 1024
@@ -50,7 +51,7 @@ class Foruiman::Engine
     @failed = false
     @closed = false
     @started = false
-    @signal_requested = false
+    @pending_signals = []
     @self_reader, @self_writer = create_pipe
     load_procfile(procfile) if procfile
   rescue StandardError
@@ -62,7 +63,6 @@ class Foruiman::Engine
   def register(name, command)
     raise Foruiman::Error, "cannot register after startup" if @started
     raise Foruiman::Error, "duplicate process: #{name}" if @names.key?(name)
-    raise Foruiman::Error, "allocated port exceeds 65535 for #{name}" if @base_port + (processes.size * 100) > 65_535
 
     Foruiman::Procfile.new[name] = command
     process = Foruiman::Process.new(command, cwd: root, env: env)
@@ -77,9 +77,6 @@ class Foruiman::Engine
   def load_procfile(filename)
     parsed = Foruiman::Procfile.new(filename)
     entries = parsed.entries.to_a
-    last_port = @base_port + ((processes.size + entries.size - 1) * 100)
-    raise Foruiman::Error, "allocated port #{last_port} exceeds 65535" if last_port > 65_535
-
     entries.each { |name, command| register(name, command) }
     @procfile_path = File.expand_path(filename).freeze
     self
@@ -87,6 +84,15 @@ class Foruiman::Engine
 
   def process_names
     @names.keys
+  end
+
+  def validate_ports!(entries = processes)
+    entries.each do |entry|
+      next if entry.port <= 65_535
+
+      raise Foruiman::Error, "allocated port #{entry.port} exceeds 65535 for #{entry.name}"
+    end
+    self
   end
 
   def process(name)
@@ -126,6 +132,7 @@ class Foruiman::Engine
     return if @shutdown
 
     targets = name ? [state(name)] : processes
+    validate_ports!(targets)
     unless @started
       @logs = Foruiman::LogStore.new(process_names, capacity: @log_lines) do |record|
         emit(:output, state(record.name), record: record)
@@ -146,6 +153,7 @@ class Foruiman::Engine
     entry = state(name)
     return if entry.restart_pending
 
+    validate_ports!([entry])
     entry.restart_pending = true
     entry.status = :restarting
     lifecycle(entry, :restarting, "restarting")
@@ -236,13 +244,13 @@ class Foruiman::Engine
   def tick(timeout: 0.03)
     return if @closed
 
-    shutdown if @signal_requested
+    handle_signals
     reap_children
     advance_groups
     writable = processes.filter_map { |entry| entry.input unless entry.input_buffer.empty? }
     ready, writable = IO.select([@self_reader, *@readers.keys], writable, nil, timeout) || [[], []]
     drain_signal_pipe if ready.delete(@self_reader)
-    shutdown if @signal_requested
+    handle_signals
     writable.each { |input| flush_input(@inputs.fetch(input)) if @inputs.key?(input) }
     read_output(ready)
     reap_children
@@ -280,6 +288,7 @@ class Foruiman::Engine
     begin
       pid = entry.process.run(output: stdout_writer, error: stderr_writer,
                               input: input_slave || @input,
+                              new_session: !@managed_input && @input.respond_to?(:tty?) && @input.tty?,
                               env: { "PORT" => entry.port.to_s, "PS" => "#{entry.name}.1" })
     rescue SystemCallError => e
       stdout_reader.close
@@ -490,8 +499,20 @@ class Foruiman::Engine
     @old_handlers = {}
     HANDLED_SIGNALS.each do |signal|
       @old_handlers[signal] = Signal.trap(signal) do
-        @signal_requested = true
+        @pending_signals << signal
         notice_signal
+      end
+    end
+  end
+
+  def handle_signals
+    pending = @pending_signals
+    @pending_signals = []
+    pending.each do |signal|
+      if FORWARDED_SIGNALS.include?(signal)
+        processes.each { |entry| signal_group(entry, signal) }
+      else
+        shutdown
       end
     end
   end

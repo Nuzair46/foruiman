@@ -92,7 +92,7 @@ module Foruiman::TUI
     end
 
     def begin_input
-      if state.name == "all"
+      if state.aggregate?
         feedback("Select a process before entering input mode")
       elsif @engine.state(state.name).status != :running
         feedback("#{state.name} is not running")
@@ -135,7 +135,7 @@ module Foruiman::TUI
     end
 
     def toggle_process
-      if state.name == "all"
+      if state.aggregate?
         control_all(:stop)
         return
       end
@@ -151,7 +151,7 @@ module Foruiman::TUI
     end
 
     def control(action)
-      if state.name == "all"
+      if state.aggregate?
         if action == :restart
           control_all(action)
         else

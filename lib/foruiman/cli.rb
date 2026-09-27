@@ -35,6 +35,7 @@ class Foruiman::CLI < Thor
   def start(process = nil)
     engine = build_engine
     engine.select(process) if process
+    engine.validate_ports!
     interactive = configuration.tui? && $stdin.tty? && $stdout.tty?
     diagnostics = Foruiman::Diagnostics.new(interactive: interactive)
     code = if interactive
@@ -76,6 +77,7 @@ class Foruiman::CLI < Thor
   desc "check", "Validate the Procfile, environment files, ports, and log capacity without starting processes"
   def check
     engine = build_engine
+    engine.validate_ports!
     puts "valid Procfile (#{engine.process_names.join(', ')})"
   rescue Foruiman::Error, SystemCallError => e
     raise Thor::Error, e.message

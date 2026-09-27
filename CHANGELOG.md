@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Forward USR1/USR2 to child process groups in both TUI and plain mode, preserving
+  application handlers and the supervisor's independent-process policy.
+- Fix inherited terminal stdin in plain mode while retaining descendant cleanup.
+- Validate ports after process selection, preserving each entry's original offset.
+- Allow a Procfile process named `all` with its own logs and controls, separate
+  from the aggregate tab.
+
 ## 0.3.0
 
 - Add `.foreman` YAML defaults with explicit CLI overrides and validated options.

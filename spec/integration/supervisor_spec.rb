@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 RSpec.describe Foruiman::Engine do
+  it "validates a startup batch before spawning and permits a valid selected process" do
+    engine = build_engine({ "web" => fixture("ticker"), "worker" => fixture("ticker") }, port: 65_500)
+    expect { engine.start_all }.to raise_error(Foruiman::Error, /65600/)
+    expect(engine.processes.map(&:pid)).to eq([nil, nil])
+    engine.start("web")
+    expect(engine.state("web").port).to eq(65_500)
+    expect { engine.restart("worker") }.to raise_error(Foruiman::Error, /65600/)
+    expect(engine.state("worker").restart_pending).to be(false)
+  end
+
   [0, 7].each do |code|
     it "stops all groups on any exit and preserves exit code #{code}" do
       pidfile = File.join(@directory, "policy.pids")
@@ -179,14 +189,14 @@ RSpec.describe Foruiman::Engine do
   end
 
   it "restores pre-existing signal handlers even when an event consumer raises" do
-    previous = Signal.trap(:TERM, "IGNORE")
+    previous = %i[TERM USR1 USR2].to_h { |signal| [signal, Signal.trap(signal, "IGNORE")] }
     engine = build_engine({ "web" => fixture("ticker") })
     engine.on_event { raise "observer failed" }
     expect { engine.run }.to raise_error("observer failed")
     expect(alive?(engine.state("web").pid)).to be(false)
-    expect(Signal.trap(:TERM, "DEFAULT")).to eq("IGNORE")
+    previous.each_key { |signal| expect(Signal.trap(signal, "DEFAULT")).to eq("IGNORE") }
   ensure
-    Signal.trap(:TERM, previous) if previous
+    previous&.each { |signal, handler| Signal.trap(signal, handler) }
   end
 
   it "retains bounded logs during bursts and continues to accept shutdown" do

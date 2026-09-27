@@ -40,6 +40,24 @@ when "input"
   line = $stdin.gets
   puts "received #{line&.chomp.inspect}"
   loop { sleep 1 }
+when "signals"
+  %w[USR1 USR2].each do |signal|
+    Signal.trap(signal) { puts "received #{signal} #{Process.pid}" }
+  end
+  child = fork { loop { sleep 1 } } if ARGV[1] == "tree"
+  File.write(ARGV.fetch(0), [Process.pid, child].compact.join("\n"))
+  puts "signals ready #{Process.pid}"
+  loop { sleep 1 }
+when "terminal_input"
+  require "io/console"
+  File.write(ARGV.fetch(0), Process.pid.to_s)
+  puts "terminal ready tty=#{$stdin.tty?}"
+  puts "received #{$stdin.gets&.chomp.inspect}"
+  $stdin.raw do
+    puts "raw ready"
+    puts "raw byte #{$stdin.getc.inspect}"
+  end
+  puts "input complete"
 when "ticker", "ignore_term"
   Signal.trap("TERM", "IGNORE") if mode == "ignore_term"
   File.write(ARGV[0], Process.pid.to_s) if ARGV[0]

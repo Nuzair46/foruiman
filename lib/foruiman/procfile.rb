@@ -52,10 +52,9 @@ class Foruiman::Procfile
   private
 
   def validate_entry!(name, command, location)
-    unless name.match?(/\A[A-Za-z0-9_-]+\z/) && !command.strip.empty? && !command.include?("\0")
-      raise ParseError, "#{location}: expected NAME: command"
-    end
-    raise ParseError, "#{location}: 'all' is reserved for the aggregate tab" if name == "all"
+    return if name.match?(/\A[A-Za-z0-9_-]+\z/) && !command.strip.empty? && !command.include?("\0")
+
+    raise ParseError, "#{location}: expected NAME: command"
   end
 
   def parse(filename)

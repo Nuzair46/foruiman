@@ -54,4 +54,9 @@ RSpec.describe Foruiman::Process do
   ensure
     [input_reader, input_writer].compact.each { |io| io.close unless io.closed? }
   end
+
+  it "reports session launch errors synchronously without running the command" do
+    process = described_class.new("echo never", cwd: File.join(@directory, "missing"))
+    expect { process.run(new_session: true) }.to raise_error(Errno::ENOENT)
+  end
 end
