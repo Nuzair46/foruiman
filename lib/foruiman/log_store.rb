@@ -14,7 +14,7 @@ class Foruiman::LogStore
   end
 
   def [](name)
-    name == "all" ? all : @buffers.fetch(name)
+    name == :all ? all : @buffers.fetch(name)
   end
 
   def write(name:, stream:, pid:, text:, complete:, previous: nil)

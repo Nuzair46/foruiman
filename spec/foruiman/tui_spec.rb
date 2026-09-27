@@ -52,8 +52,8 @@ RSpec.describe Foruiman::TUI::State do
 
   it "preserves ordered tabs and independent follow/scroll state" do
     state = described_class.new(%w[web worker])
-    expect(state.tabs).to eq(%w[web worker all])
-    expect(state.name).to eq("all")
+    expect(state.tabs).to eq(["web", "worker", :all])
+    expect(state.name).to eq(:all)
     state.select(0)
     state.viewport.home(Foruiman::Ring.new(3))
     state.move(1)
@@ -61,7 +61,21 @@ RSpec.describe Foruiman::TUI::State do
     state.move(-1)
     expect(state.viewport.following).to be(false)
     state.move(-1)
+    expect(state.name).to eq(:all)
+  end
+
+  it "gives the all process and aggregate their own viewports and input state" do
+    state = described_class.new(%w[all peer])
+    aggregate = state.viewport
+    expect(state.aggregate?).to be(true)
+    state.select(0)
     expect(state.name).to eq("all")
+    expect(state.aggregate?).to be(false)
+    expect(state.viewport).not_to equal(aggregate)
+    state.input_target = "all"
+    state.input_line.feed("continue\n")
+    state.input_line.feed("\e[A")
+    expect(state.input_line.text).to eq("continue")
   end
 end
 
@@ -86,6 +100,22 @@ RSpec.describe Foruiman::TUI::Keyboard do
 end
 
 RSpec.describe Foruiman::TUI::Renderer do
+  it "renders an all process independently from the aggregate tab" do
+    engine = build_engine({ "all" => fixture("ticker"), "peer" => fixture("ticker") })
+    engine.start_all
+    engine.logs.write(name: "all", stream: :stdout, pid: 1, text: "own marker", complete: true)
+    engine.logs.write(name: "peer", stream: :stdout, pid: 2, text: "peer marker", complete: true)
+    state = Foruiman::TUI::State.new(engine.process_names)
+    renderer = described_class.new
+    state.select(0)
+    frame = renderer.render(state, engine, rows: 24, columns: 100).gsub(Foruiman::ANSI::SGR, "")
+    expect(frame).to include("1 ▶ all", "0 ≡ all", "› all", "own marker")
+    expect(frame).not_to include("peer marker", "restart all")
+    state.select(2)
+    frame = renderer.render(state, engine, rows: 24, columns: 100).gsub(Foruiman::ANSI::SGR, "")
+    expect(frame).to include("≡ all logs", "own marker", "peer marker", "restart all")
+  end
+
   it "keeps the command cursor visible across narrow layouts and resizing" do
     engine = build_engine({ "web" => fixture("ticker") })
     engine.start_all
@@ -144,6 +174,31 @@ RSpec.describe Foruiman::TUI::Renderer do
 end
 
 RSpec.describe Foruiman::TUI::Application do
+  it "controls the all process independently and reserves zero for the aggregate" do
+    engine = build_engine({ "all" => fixture("ticker"), "peer" => fixture("ticker") })
+    engine.start_all
+    application = described_class.new(engine)
+    application.handle(1, 10)
+    application.handle(:input, 10)
+    expect(application.state.input_target).to eq("all")
+    application.state.input_target = nil
+    peer = engine.state("peer").pid
+    application.handle(:restart, 10)
+    eventually(engine) { engine.state("all").generation == 2 }
+    expect(engine.state("peer").generation).to eq(1)
+    expect(alive?(peer)).to be(true)
+    application.handle(:stop, 10)
+    eventually(engine) { engine.state("all").status == :stopped }
+    expect(alive?(peer)).to be(true)
+    application.handle(:stop, 10)
+    expect(engine.state("all").generation).to eq(3)
+    application.handle(0, 10)
+    expect(application.state.aggregate?).to be(true)
+    application.handle(:stop, 10)
+    eventually(engine) { engine.finished? }
+    expect(engine.processes.map(&:status)).to eq(%i[stopped stopped])
+  end
+
   it "restarts running and exited entries on all without losing retained logs" do
     engine = build_engine({ "web" => fixture("ticker"), "job" => fixture("exit", "0") })
     engine.start_all

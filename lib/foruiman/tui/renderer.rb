@@ -126,15 +126,15 @@ module Foruiman::TUI
 
     def tab(name, index, state, engine, width)
       selected = index == state.selected
-      entry = name == "all" ? nil : engine.processes.find { |process| process.name == name }
-      mark = name == "all" ? "≡" : Theme::STATUS_MARKS.fetch(entry&.status, "○")
-      number = if name == "all"
+      entry = name == :all ? nil : engine.processes.find { |process| process.name == name }
+      mark = name == :all ? "≡" : Theme::STATUS_MARKS.fetch(entry&.status, "○")
+      number = if name == :all
                  "0"
                else
                  (index < 9 ? (index + 1).to_s : "·")
                end
-      name = Text.clip(name, [width - 12, 6].max.clamp(6, 22), ellipsis: true)
-      color = name == "all" ? :accent : @theme.process(index)
+      color = name == :all ? :accent : @theme.process(index)
+      name = Text.clip(name.to_s, [width - 12, 6].max.clamp(6, 22), ellipsis: true)
       mark_color = entry ? Theme::STATUS_COLORS.fetch(entry.status, :muted) : :muted
       @theme.paint(" #{number} ", selected ? :muted : :faint, selected: selected) +
         @theme.paint("#{mark} ", mark_color, selected: selected) +
@@ -147,14 +147,14 @@ module Foruiman::TUI
                       @theme.paint(" ? / Escape close help ", :muted))
       end
 
-      title = state.name == "all" ? " ≡ all logs " : " › #{state.name} "
-      detail = if state.name == "all"
+      title = state.aggregate? ? " ≡ all logs " : " › #{state.name} "
+      detail = if state.aggregate?
                  "#{engine.processes.size} processes"
                else
                  entry = engine.state(state.name)
                  process_detail(entry)
                end
-      active = if state.name == "all"
+      active = if state.aggregate?
                  engine.processes.any? { |entry| entry.status == :running }
                else
                  engine.state(state.name).status == :running
@@ -171,7 +171,7 @@ module Foruiman::TUI
       title = @theme.paint(title, :text, bold: true)
       if @inside >= 45
         title += @theme.paint(" #{detail} ", :muted)
-      elsif state.name != "all" && @inside >= 28
+      elsif !state.aggregate? && @inside >= 28
         entry = engine.state(state.name)
         title += @theme.paint(" #{entry.status} ", Theme::STATUS_COLORS.fetch(entry.status, :muted))
       end
@@ -200,7 +200,7 @@ module Foruiman::TUI
       thumb_start = buffer.size <= @height ? 0 : (first * travel / (buffer.size - @height))
       Array.new(@height) do |index|
         content = if records[index]
-                    @formatter.row(records[index], aggregate: state.name == "all", width: @inside - 2)
+                    @formatter.row(records[index], aggregate: state.aggregate?, width: @inside - 2)
                   elsif records.empty? && index == @height / 2
                     @theme.paint("Waiting for output…", :faint)
                   else
@@ -226,7 +226,7 @@ module Foruiman::TUI
                  else
                    " f resume "
                  end
-      location = " PID #{engine.state(state.name).pid || '-'} " if state.name != "all" && @inside < 45
+      location = " PID #{engine.state(state.name).pid || '-'} " if !state.aggregate? && @inside < 45
       border(@theme.paint(count, :faint), @theme.paint(location, state.viewport.following ? :faint : :amber),
              bottom: true)
     end
@@ -269,8 +269,8 @@ module Foruiman::TUI
     end
 
     def shortcuts(state, engine)
-      restart = ["r", state.name == "all" ? "↻ restart all" : "↻ restart"]
-      toggle = if state.name == "all"
+      restart = ["r", state.aggregate? ? "↻ restart all" : "↻ restart"]
+      toggle = if state.aggregate?
                  ["s", "■ stop all"]
                elsif process_active?(engine.state(state.name))
                  ["s", "■ stop"]

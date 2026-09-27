@@ -3,14 +3,20 @@
 `Procfile` retains Foreman's ordered parser/writer API with strict file validation.
 `Env` retains its quoting rules and adds a non-mutating precedence merge. `Process`
 wraps `/bin/sh -c` with a new process group, two output streams, and configurable stdin.
-`CLI < Thor` validates the full configuration before starting the engine.
+The shell catches USR1/USR2 while waiting so group forwarding does not kill the
+wrapper ahead of a signal-aware application. Executed programs receive normal
+signal dispositions and can install their own handlers.
+`CLI < Thor` validates configuration and selected port allocations before opening
+the TUI or starting children. `check` validates every allocation. Original Procfile
+offsets survive selection; embedded `start` validates its entire batch before
+launching any child, and `restart` validates before changing process state.
 `Configuration` safely loads `.foreman` defaults, merges explicit CLI values,
 resolves Foreman-compatible paths and environments, and validates numeric options.
 `run` uses `exec` for one-off commands with direct terminal IO and exact exit status.
 
 `Engine` owns registration, PID/group tracking, nonblocking pipes, child reaping,
 and lifecycle transitions. A single caller thread drives all mutations. Signal
-handlers only set a flag and wake a self-pipe. The loop reaps only its own direct
+handlers only queue the signal and wake a self-pipe. The loop reaps only its own direct
 children, services bounded reads in round-robin order, checks TERM deadlines, and
 starts pending replacements once old groups and pipes are finished. Group existence
 is tracked independently of leader status; Linux `/proc` distinguishes running
@@ -47,8 +53,9 @@ end
 ```
 
 Call engine methods and event listeners on the driving thread; this is not a
-cross-thread messaging API. `run` handles INT/TERM/HUP and restores existing
-handlers. An embedding loop that drives `tick` directly owns its signal handling.
+cross-thread messaging API. `run` handles INT/TERM/HUP shutdown, forwards USR1/USR2
+to owned groups, and restores existing handlers. An embedding loop that drives
+`tick` directly owns its signal handling.
 `close` disconnects observers so a failed renderer/output consumer cannot prevent
 process cleanup. `term_timeout:` controls the shutdown grace period (CLI `-t`,
 default five seconds). `exit_on: :all` retains independent processes; `:any` or
@@ -56,8 +63,15 @@ default five seconds). `exit_on: :all` retains independent processes; `:any` or
 its exit code. Intentional stops/restarts do not trigger the policy. `state(name)` exposes lifecycle state for
 rendering; callers should not mutate it.
 
-Children inherit the configured input stream in plain and embedded use. Before
-startup, `manage_input!` gives each child a dedicated pseudo-terminal while the
+Children inherit the configured input stream in plain and embedded use. For a
+terminal input stream, `Process` forks, calls `setsid`, and execs the shell so reads
+do not stop with SIGTTIN in a background group of the supervisor's session. The
+child keeps its inherited terminal descriptor and its own process group; a pipe
+reports exec failures synchronously. This does not give the child a controlling
+terminal for `/dev/tty` or shell job control. Multiple inherited readers compete
+for the same input. Nonterminal input keeps the ordinary `spawn` path.
+
+Before startup, `manage_input!` gives each child a dedicated pseudo-terminal while the
 caller retains the real terminal; `write_input(name, bytes)` forwards input,
 `interrupt_process(name)` sends SIGINT to that process group, and `resize_inputs` keeps
 the pseudo-terminals sized with the UI. The TUI uses this mode so watch commands
@@ -70,7 +84,10 @@ line erasure before recording child output; screen controls remain suppressed.
 
 `LogStore` uses per-process `Ring` instances and an aggregate `Ring`, each with O(1)
 append, eviction, record replacement, and identity lookup. Immutable `Data` records
-are shared. A partial record has one sequence identity; completing it replaces
+are shared. `logs.all` or `logs[:all]` accesses the aggregate; `logs["all"]` accesses
+a process actually named `all`. The TUI uses symbol `:all` for aggregate state and
+string names for processes, with `State#aggregate?` defining control scope.
+A partial record has one sequence identity; completing it replaces
 retained references without re-inserting an already evicted aggregate record.
 Sequence order represents first observation, not line completion time. Actual
 memory use depends on line length and ring capacity; retained text is bounded by
