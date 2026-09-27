@@ -120,7 +120,9 @@ bundle exec ruby script/smoke_gem.rb
 Releases use RubyGems trusted publishing. Configure the publisher once with
 repository `Nuzair46/foruiman`, workflow `release.yml`, and environment `release`.
 
-To publish, update `lib/foruiman/version.rb` on `main`, open the
+To publish, update `lib/foruiman/version.rb` and `CHANGELOG.md`, then run
+`bundle install` to update the version in `Gemfile.lock`. Commit all three files
+to `main`; CI requires the lockfile to match the gem version. Open the
 [Release workflow](https://github.com/Nuzair46/foruiman/actions/workflows/release.yml),
 choose **Run workflow**, and select `main`. GitHub Actions runs the full CI suite,
 creates the version tag, and publishes the gem to RubyGems.org.

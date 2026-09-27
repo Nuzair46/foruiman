@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Forward USR1/USR2 to child process groups in both TUI and plain mode, preserving
   application handlers and the supervisor's independent-process policy.
